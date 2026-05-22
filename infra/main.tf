@@ -59,7 +59,7 @@ resource "aws_s3_bucket_cors_configuration" "media" {
 # CloudFront in front of S3 via Origin Access Control (bucket stays private).
 # ---------------------------------------------------------------------------
 resource "aws_cloudfront_origin_access_control" "media" {
-  name                              = "${local.bucket_name}-oac"
+  name                              = "${var.project}-oac"
   origin_access_control_origin_type = "s3"
   signing_behavior                  = "always"
   signing_protocol                  = "sigv4"
@@ -86,6 +86,8 @@ resource "aws_cloudfront_distribution" "media" {
     compress               = true
     # AWS managed "CachingOptimized" policy.
     cache_policy_id = "658327ea-f89d-4fab-a63d-7e88639e58f6"
+    # AWS managed "SimpleCORS" response headers policy.
+    response_headers_policy_id = "60669652-455b-4ae9-85a4-c4c02393f86c"
   }
 
   restrictions {
