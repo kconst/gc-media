@@ -22,6 +22,8 @@ export interface RunOptions {
   force?: boolean;
   /** Skip the Claude calls (faster dry runs). */
   noAi?: boolean;
+  /** Sink for progress lines (defaults to console.log); used by the web UI. */
+  log?: (msg: string) => void;
 }
 
 async function gather(opts: RunOptions): Promise<IngestItem[]> {
@@ -40,10 +42,11 @@ async function gather(opts: RunOptions): Promise<IngestItem[]> {
 }
 
 export async function runPipeline(opts: RunOptions): Promise<void> {
+  const log = opts.log ?? ((m: string) => console.log(m));
   const state = await State.load();
   const all = await gather(opts);
   const items = all.filter((it) => opts.force || !state.has(it.id));
-  console.log(`Discovered ${all.length} assets, ${items.length} new to process.`);
+  log(`Discovered ${all.length} assets, ${items.length} new to process.`);
 
   // Pass 1: build the GoPro GPS timeline + remember each clip's own position.
   const resolver = new GeoResolver();
@@ -55,7 +58,7 @@ export async function runPipeline(opts: RunOptions): Promise<void> {
       ownGps.set(it.id, track);
     }
   }
-  console.log(`GoPro GPS timeline: ${resolver.trackSize} samples.`);
+  log(`GoPro GPS timeline: ${resolver.trackSize} samples.`);
 
   const newAssets: Asset[] = [];
 
@@ -106,14 +109,14 @@ export async function runPipeline(opts: RunOptions): Promise<void> {
         newAssets.push({ ...base, lat: geo.point.lat, lng: geo.point.lng, geoSource: geo.source });
       } else {
         await addPending(base);
-        console.log(`  ${it.originalFilename}: needs manual placement.`);
+        log(`  ${it.originalFilename}: needs manual placement.`);
       }
 
       state.set({ id: it.id, processedAt: new Date().toISOString(), geolocated: !!geo });
       await state.save();
-      console.log(`  processed ${it.originalFilename}${geo ? ` (${geo.source})` : ""}`);
+      log(`  processed ${it.originalFilename}${geo ? ` (${geo.source})` : ""}`);
     } catch (err) {
-      console.error(`  FAILED ${it.originalFilename}:`, (err as Error).message);
+      log(`  FAILED ${it.originalFilename}: ${(err as Error).message}`);
     }
   }
 
@@ -121,5 +124,5 @@ export async function runPipeline(opts: RunOptions): Promise<void> {
     const manifest = upsertAssets(await loadManifest(), newAssets);
     await saveAndPublish(manifest);
   }
-  console.log(`Done. ${newAssets.length} pins added; run \`gc-loader place\` for any pending assets.`);
+  log(`Done. ${newAssets.length} pins added; place any pending assets from the panel.`);
 }

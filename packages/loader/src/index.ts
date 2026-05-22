@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { runPipeline } from "./pipeline.js";
-import { runPlaceUI } from "./geo/placeUI.js";
+import { runServer } from "./web/server.js";
 
 const program = new Command();
 program
@@ -27,11 +27,12 @@ program
   });
 
 program
-  .command("place")
-  .description("Open the local UI to drag un-geolocated assets onto the map.")
+  .command("serve")
+  .alias("place")
+  .description("Open the local control panel: ingest, place pins, manage the map.")
   .option("-p, --port <port>", "port", "4321")
   .action(async (opts) => {
-    await runPlaceUI(Number(opts.port));
+    await runServer(Number(opts.port));
   });
 
 program.parseAsync().catch((err) => {

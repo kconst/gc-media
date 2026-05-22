@@ -39,6 +39,10 @@ export class State {
     this.data.assets[record.id] = record;
   }
 
+  remove(id: string): void {
+    delete this.data.assets[id];
+  }
+
   async save(): Promise<void> {
     await fs.mkdir(config.dataDir, { recursive: true });
     await fs.writeFile(config.statePath, JSON.stringify(this.data, null, 2));

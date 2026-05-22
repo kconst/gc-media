@@ -30,6 +30,17 @@ export function upsertAssets(manifest: Manifest, assets: Asset[]): Manifest {
   };
 }
 
+/** Drop an asset by id, then recompute bounds + timestamp. */
+export function removeAsset(manifest: Manifest, id: string): Manifest {
+  const assets = manifest.assets.filter((a) => a.id !== id);
+  return {
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    bounds: computeBounds(assets),
+    assets,
+  };
+}
+
 /** Write the manifest locally and publish it where the web app reads it. */
 export async function saveAndPublish(manifest: Manifest): Promise<void> {
   await fs.mkdir(config.dataDir, { recursive: true });
