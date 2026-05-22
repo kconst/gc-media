@@ -1,0 +1,20 @@
+{
+  "name": "gc-media",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Grand Canyon trip map — interactive Google Map of geotagged photos/videos with AI descriptions.",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "loader": "npm run start --workspace @gc-media/loader --",
+    "web:dev": "npm run dev --workspace @gc-media/web",
+    "web:build": "npm run build --workspace @gc-media/web"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

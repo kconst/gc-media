@@ -1,0 +1,40 @@
+node_modules/
+dist/
+.next/
+out/
+
+# Secrets / env
+.env
+.env.local
+.env.*.local
+
+# Loader working data
+/data/manifest.json
+/data/state.json
+/data/cache/
+/data/incoming/
+/data/derivatives/
+
+# Raw media (never commit large media)
+*.mp4
+*.mov
+*.jpg
+*.jpeg
+*.png
+*.heic
+*.gpx
+!apps/web/public/**
+
+# Terraform
+infra/.terraform/
+infra/*.tfstate
+infra/*.tfstate.*
+infra/*.tfvars
+infra/tfplan
+infra/.terraform.lock.hcl
+
+# Misc
+.DS_Store
+*.log
+*.tsbuildinfo
+next-env.d.ts

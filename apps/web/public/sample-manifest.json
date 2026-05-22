@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "generatedAt": "2026-05-22T00:00:00.000Z",
+  "bounds": { "north": 36.12, "south": 36.05, "east": -112.08, "west": -112.15 },
+  "assets": [
+    {
+      "id": "sample-bright-angel",
+      "type": "photo",
+      "thumbnailUrl": "https://picsum.photos/seed/canyon1/320/320",
+      "fullUrl": "https://picsum.photos/seed/canyon1/1600/1000",
+      "lat": 36.0573,
+      "lng": -112.1437,
+      "geoSource": "manual",
+      "capturedAt": "2026-05-10T14:30:00.000Z",
+      "description": "Looking down the upper switchbacks of the Bright Angel Trail just below the South Rim trailhead. Morning light rakes across the red Hermit Shale, and a string of hikers descends single-file toward the first tunnel.",
+      "labels": {
+        "plants": ["pinyon pine", "utah juniper"],
+        "animals": [],
+        "peopleMorale": ["eager at the start"],
+        "interesting": ["switchbacks", "rock strata", "trail tunnel"]
+      },
+      "credit": "Sample"
+    },
+    {
+      "id": "sample-south-kaibab",
+      "type": "video",
+      "thumbnailUrl": "https://picsum.photos/seed/canyon2/320/320",
+      "fullUrl": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
+      "posterUrl": "https://picsum.photos/seed/canyon2/1600/1000",
+      "lat": 36.0531,
+      "lng": -112.0837,
+      "geoSource": "gopro",
+      "capturedAt": "2026-05-11T17:05:00.000Z",
+      "description": "A GoPro clip panning across Ooh Aah Point on the South Kaibab Trail, the canyon walls glowing in late-afternoon sun while the group catches their breath after the climb.",
+      "labels": {
+        "plants": ["blackbrush"],
+        "animals": ["raven"],
+        "peopleMorale": ["winded but elated"],
+        "interesting": ["Ooh Aah Point", "panorama", "late afternoon light"]
+      },
+      "credit": "Sample"
+    }
+  ]
+}
