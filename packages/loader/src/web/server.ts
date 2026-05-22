@@ -1,11 +1,22 @@
-import express from "express";
+import crypto from "node:crypto";
+import fs from "node:fs/promises";
+import path from "node:path";
+import express, { type NextFunction, type Request, type Response } from "express";
+import multer from "multer";
 import type { Asset } from "@gc-media/shared";
+import { config } from "../config.js";
 import { runPipeline, type RunOptions } from "../pipeline.js";
 import { loadPending, savePending } from "../pending.js";
 import { loadManifest, removeAsset, saveAndPublish, upsertAssets } from "../manifest.js";
 import { State } from "../state.js";
 
-const page = (mapsKey: string, mapId: string) => /* html */ `<!doctype html>
+function timingSafeEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  return ab.length === bb.length && crypto.timingSafeEqual(ab, bb);
+}
+
+const page = (mapsKey: string, mapId: string, incomingDir: string) => /* html */ `<!doctype html>
 <html><head><meta charset="utf-8"/><title>GC Media — control panel</title>
 <style>
   :root { --b:#d0d4da; }
@@ -38,15 +49,21 @@ const page = (mapsKey: string, mapId: string) => /* html */ `<!doctype html>
 <main>
   <div id="left">
     <section>
+      <h2>Upload from this device</h2>
+      <input id="files" type="file" multiple accept="image/*,video/*"/>
+      <div class="row"><button id="upload" class="secondary">Upload</button> <span id="ustatus" class="empty"></span></div>
+      <p class="empty" style="margin:6px 0 0">Phone uploads often drop GPS — those land in “Needs placement”.</p>
+    </section>
+    <section>
       <h2>Ingest</h2>
       <label>Source</label>
       <select id="source">
-        <option value="local">Local folder</option>
+        <option value="local">Local / uploaded folder</option>
         <option value="google">Google Photos</option>
         <option value="all">All</option>
       </select>
       <label>Folder path (for local)</label>
-      <input id="dir" type="text" placeholder="/Users/you/gc-trip"/>
+      <input id="dir" type="text" placeholder="/path/to/media" value="${incomingDir}"/>
       <label>Credit (optional)</label>
       <input id="credit" type="text" placeholder="Your name"/>
       <div class="row">
@@ -114,6 +131,20 @@ const page = (mapsKey: string, mapId: string) => /* html */ `<!doctype html>
     }
   }
 
+  $('upload').addEventListener('click', async () => {
+    const inp = $('files');
+    if (!inp.files.length) return;
+    const fd = new FormData();
+    for (const f of inp.files) fd.append('files', f);
+    $('ustatus').textContent = 'Uploading…'; $('upload').disabled = true;
+    try {
+      const r = await fetch('/api/upload', { method:'POST', body: fd }).then(r => r.json());
+      $('ustatus').textContent = 'Uploaded ' + r.count + ' file(s).';
+      $('dir').value = r.dir; inp.value = '';
+    } catch { $('ustatus').textContent = 'Upload failed.'; }
+    $('upload').disabled = false;
+  });
+
   $('run').addEventListener('click', () => {
     const params = new URLSearchParams({
       source: $('source').value,
@@ -162,9 +193,45 @@ export async function runServer(port = 4321): Promise<void> {
   if (!mapsKey) console.warn("NEXT_PUBLIC_GOOGLE_MAPS_API_KEY not set — the map will not load.");
 
   const app = express();
+
+  // Basic-auth gate (set PANEL_PASSWORD on the server). No password = open,
+  // which is fine for localhost but must be set before exposing the panel.
+  const panelUser = process.env.PANEL_USER ?? "gc";
+  const panelPassword = process.env.PANEL_PASSWORD;
+  if (!panelPassword) {
+    console.warn("PANEL_PASSWORD not set — the panel is UNPROTECTED. Set it before exposing this server.");
+  }
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (!panelPassword) return next();
+    const [scheme, encoded] = (req.headers.authorization ?? "").split(" ");
+    if (scheme === "Basic" && encoded) {
+      const [user, pass] = Buffer.from(encoded, "base64").toString().split(":");
+      if (timingSafeEqual(user ?? "", panelUser) && timingSafeEqual(pass ?? "", panelPassword)) {
+        return next();
+      }
+    }
+    res.set("WWW-Authenticate", 'Basic realm="gc-media"').status(401).send("Authentication required.");
+  });
+
   app.use(express.json());
 
-  app.get("/", (_req, res) => res.send(page(mapsKey, mapId)));
+  const upload = multer({
+    storage: multer.diskStorage({
+      destination: (_req, _file, cb) => {
+        fs.mkdir(config.incomingDir, { recursive: true })
+          .then(() => cb(null, config.incomingDir))
+          .catch((err) => cb(err as Error, config.incomingDir));
+      },
+      filename: (_req, file, cb) => cb(null, path.basename(file.originalname)),
+    }),
+  });
+
+  app.get("/", (_req, res) => res.send(page(mapsKey, mapId, config.incomingDir)));
+
+  app.post("/api/upload", upload.array("files"), (req, res) => {
+    const files = (req.files as Express.Multer.File[] | undefined) ?? [];
+    res.json({ ok: true, count: files.length, dir: config.incomingDir });
+  });
   app.get("/api/pending", async (_req, res) => res.json(await loadPending()));
   app.get("/api/manifest", async (_req, res) => res.json(await loadManifest()));
 
