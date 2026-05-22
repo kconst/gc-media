@@ -33,6 +33,9 @@ infra/*.tfvars
 infra/tfplan
 infra/.terraform.lock.hcl
 
+# Vercel
+.vercel/
+
 # Misc
 .DS_Store
 *.log
