@@ -4,6 +4,7 @@ import { config } from "./config.js";
 import { State } from "./state.js";
 import { GeoResolver } from "./geo/resolver.js";
 import { readExif } from "./meta/exif.js";
+import { readTakeoutSidecar } from "./meta/takeout.js";
 import { extractGoproTrack } from "./meta/gopro.js";
 import { makeDerivatives, sampleFrames } from "./media/derivatives.js";
 import { uploadFile } from "./media/s3.js";
@@ -62,12 +63,14 @@ export async function runPipeline(opts: RunOptions): Promise<void> {
   for (const it of items) {
     try {
       const exif = it.type === "photo" ? await readExif(it.localPath) : {};
+      const sidecar = await readTakeoutSidecar(it.localPath);
       const ownTrack = ownGps.get(it.id);
-      const capturedAt = exif.capturedAt ?? ownTrack?.[0]?.t;
+      const capturedAt = exif.capturedAt ?? sidecar?.capturedAt ?? ownTrack?.[0]?.t;
 
       const geo = resolver.resolve({
         exifGps: exif.gps,
         ownTrackGps: ownTrack ? GeoResolver.centroid(ownTrack) : undefined,
+        takeoutGps: sidecar?.gps,
         capturedAt,
       });
 

@@ -32,12 +32,18 @@ export class GeoResolver {
 
   /**
    * Resolve coordinates for an asset.
-   * Priority: explicit EXIF/own-track GPS → time-match against the track.
-   * Returns undefined when nothing matches (→ manual placement).
+   * Priority: own-track GPS → file EXIF → Takeout sidecar → time-match against
+   * the track. Returns undefined when nothing matches (→ manual placement).
    */
-  resolve(opts: { exifGps?: GeoPoint; ownTrackGps?: GeoPoint; capturedAt?: number }): ResolvedGeo | undefined {
+  resolve(opts: {
+    exifGps?: GeoPoint;
+    ownTrackGps?: GeoPoint;
+    takeoutGps?: GeoPoint;
+    capturedAt?: number;
+  }): ResolvedGeo | undefined {
     if (opts.ownTrackGps) return { point: opts.ownTrackGps, source: "gopro" };
     if (opts.exifGps) return { point: opts.exifGps, source: "exif" };
+    if (opts.takeoutGps) return { point: opts.takeoutGps, source: "takeout" };
     if (opts.capturedAt !== undefined) {
       const matched = this.matchByTime(opts.capturedAt);
       if (matched) return { point: matched, source: "gopro" };
