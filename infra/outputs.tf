@@ -18,3 +18,18 @@ output "loader_aws_secret_access_key" {
   value       = aws_iam_access_key.loader.secret
   sensitive   = true
 }
+
+output "processor_panel_url" {
+  description = "HTTPS URL of the processor control panel (when enable_processor=true)."
+  value       = var.enable_processor ? "https://${local.processor_host}" : null
+}
+
+output "processor_public_ip" {
+  description = "Elastic IP of the processor instance."
+  value       = var.enable_processor ? aws_eip.processor[0].public_ip : null
+}
+
+output "processor_instance_id" {
+  description = "Instance id (use with SSM Session Manager for a shell)."
+  value       = var.enable_processor ? aws_instance.processor[0].id : null
+}

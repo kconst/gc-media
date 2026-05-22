@@ -21,3 +21,49 @@ variable "web_origins" {
   type        = list(string)
   default     = ["http://localhost:3000"]
 }
+
+# ---------------------------------------------------------------------------
+# Optional processor EC2 instance (runs the loader control panel in the cloud).
+# Off by default so the base apply is unaffected; set enable_processor=true.
+# Secrets are read at boot from SSM Parameter Store (NOT stored in tfstate):
+#   <ssm_param_prefix>/ANTHROPIC_API_KEY      (SecureString)
+#   <ssm_param_prefix>/GOOGLE_MAPS_API_KEY    (SecureString or String)
+#   <ssm_param_prefix>/GOOGLE_MAPS_MAP_ID     (String)
+#   <ssm_param_prefix>/PANEL_PASSWORD         (SecureString)
+#   <ssm_param_prefix>/GITHUB_TOKEN           (SecureString, optional; for a private repo clone)
+# ---------------------------------------------------------------------------
+variable "enable_processor" {
+  description = "Create the EC2 processor instance + control panel."
+  type        = bool
+  default     = false
+}
+
+variable "processor_instance_type" {
+  description = "EC2 instance type for the processor."
+  type        = string
+  default     = "t3.small"
+}
+
+variable "panel_user" {
+  description = "Basic-auth username for the control panel."
+  type        = string
+  default     = "gc"
+}
+
+variable "github_repo_url" {
+  description = "HTTPS git URL the instance clones to run the loader."
+  type        = string
+  default     = "https://github.com/kconst/gc-media.git"
+}
+
+variable "github_branch" {
+  description = "Branch to deploy on the processor."
+  type        = string
+  default     = "main"
+}
+
+variable "ssm_param_prefix" {
+  description = "SSM Parameter Store path prefix holding the processor's secrets."
+  type        = string
+  default     = "/gc-media"
+}

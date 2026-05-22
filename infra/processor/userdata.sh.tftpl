@@ -1,0 +1,38 @@
+#!/bin/bash
+# Minimal first-boot shim: clone the repo and hand off to setup.sh (which is
+# idempotent and can be re-run by hand via SSM Session Manager if boot fails).
+set -uxo pipefail
+
+dnf install -y git tar xz
+
+export GC_REGION="${region}"
+export GC_SSM_PREFIX="${ssm_prefix}"
+export GC_PANEL_USER="${panel_user}"
+export GC_PANEL_HOST="${panel_host}"
+export GC_BRANCH="${branch}"
+export GC_REPO_URL="${repo_url}"
+export GC_REPO_DIR=/opt/gc-media
+
+# Optional token for a private repo clone.
+TOKEN=$(aws ssm get-parameter --region "$GC_REGION" --name "${ssm_prefix}/GITHUB_TOKEN" --with-decryption --query Parameter.Value --output text 2>/dev/null || true)
+if [ -n "$TOKEN" ] && [ "$TOKEN" != "None" ]; then
+  CLONE_URL=$(printf '%s' "$GC_REPO_URL" | sed "s#https://#https://$TOKEN@#")
+else
+  CLONE_URL="$GC_REPO_URL"
+fi
+
+rm -rf "$GC_REPO_DIR"
+git clone --branch "$GC_BRANCH" --depth 1 "$CLONE_URL" "$GC_REPO_DIR"
+
+# Persist the deploy config so setup.sh can be re-run later without env.
+cat > /etc/gc-media.deploy <<EOF
+GC_REGION=${region}
+GC_SSM_PREFIX=${ssm_prefix}
+GC_PANEL_USER=${panel_user}
+GC_PANEL_HOST=${panel_host}
+GC_BRANCH=${branch}
+GC_REPO_URL=${repo_url}
+GC_REPO_DIR=/opt/gc-media
+EOF
+
+bash "$GC_REPO_DIR/infra/processor/setup.sh" 2>&1 | tee /var/log/gc-setup.log

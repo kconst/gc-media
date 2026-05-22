@@ -134,8 +134,8 @@ resource "aws_iam_user" "loader" {
 
 data "aws_iam_policy_document" "loader" {
   statement {
-    sid     = "ManageMediaObjects"
-    actions = ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"]
+    sid       = "ManageMediaObjects"
+    actions   = ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"]
     resources = ["${aws_s3_bucket.media.arn}/*"]
   }
   statement {
