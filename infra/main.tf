@@ -10,6 +10,15 @@ terraform {
       version = "~> 3.0"
     }
   }
+
+  # Durable, shareable state so the stack can be managed from anywhere
+  # (e.g. AWS CloudShell on a phone).
+  backend "s3" {
+    bucket  = "gc-media-tfstate-588994405361"
+    key     = "infra/terraform.tfstate"
+    region  = "us-east-1"
+    encrypt = true
+  }
 }
 
 provider "aws" {

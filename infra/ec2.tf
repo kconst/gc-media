@@ -154,6 +154,11 @@ resource "aws_instance" "processor" {
     panel_user = var.panel_user
     panel_host = local.processor_host
   })
+
+  # Don't recreate the instance just because a newer AL2023 AMI was published.
+  lifecycle {
+    ignore_changes = [ami]
+  }
 }
 
 resource "aws_eip_association" "processor" {
