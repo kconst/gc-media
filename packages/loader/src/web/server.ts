@@ -1,8 +1,10 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
+import { createWriteStream } from "node:fs";
 import path from "node:path";
 import express, { type NextFunction, type Request, type Response } from "express";
 import multer from "multer";
+import unzipper from "unzipper";
 import type { Asset } from "@gc-media/shared";
 import { config } from "../config.js";
 import { runPipeline, type RunOptions } from "../pipeline.js";
@@ -14,6 +16,41 @@ function timingSafeEqual(a: string, b: string): boolean {
   const ab = Buffer.from(a);
   const bb = Buffer.from(b);
   return ab.length === bb.length && crypto.timingSafeEqual(ab, bb);
+}
+
+const MEDIA_EXT = new Set([".jpg", ".jpeg", ".png", ".heic", ".heif", ".webp", ".mp4", ".mov", ".m4v", ".avi"]);
+
+/** Keep media files and Takeout JSON sidecars; drop everything else. */
+function wantedInZip(name: string): boolean {
+  const lower = name.toLowerCase();
+  return lower.endsWith(".json") || MEDIA_EXT.has(path.extname(lower));
+}
+
+/**
+ * Extract media + sidecars from a (Google Takeout) zip into destDir, preserving
+ * each entry's relative folder so images and their .json sidecars stay together.
+ * Guards against zip-slip path traversal.
+ */
+async function extractMediaZip(zipPath: string, destDir: string): Promise<number> {
+  await fs.mkdir(destDir, { recursive: true });
+  const root = path.resolve(destDir);
+  const directory = await unzipper.Open.file(zipPath);
+  let count = 0;
+  for (const entry of directory.files) {
+    if (entry.type !== "File" || !wantedInZip(entry.path)) continue;
+    const outPath = path.resolve(root, entry.path);
+    if (outPath !== root && !outPath.startsWith(root + path.sep)) continue; // zip-slip
+    await fs.mkdir(path.dirname(outPath), { recursive: true });
+    await new Promise<void>((resolve, reject) => {
+      entry
+        .stream()
+        .pipe(createWriteStream(outPath))
+        .on("finish", () => resolve())
+        .on("error", reject);
+    });
+    count++;
+  }
+  return count;
 }
 
 const page = (mapsKey: string, mapId: string, incomingDir: string) => /* html */ `<!doctype html>
@@ -54,6 +91,12 @@ const page = (mapsKey: string, mapId: string, incomingDir: string) => /* html */
       <input id="files" type="file" multiple accept="image/*,video/*"/>
       <div class="row"><button id="upload" class="secondary">Upload</button> <span id="ustatus" class="empty"></span></div>
       <p class="empty" style="margin:6px 0 0">Phone uploads often drop GPS — those land in “Needs placement”.</p>
+    </section>
+    <section>
+      <h2>Upload Google Takeout (.zip)</h2>
+      <input id="zip" type="file" accept=".zip,application/zip"/>
+      <div class="row"><button id="uploadzip" class="secondary">Upload &amp; extract</button> <span id="zstatus" class="empty"></span></div>
+      <p class="empty" style="margin:6px 0 0">Keeps GPS from the .json sidecars, so pins auto-place.</p>
     </section>
     <section>
       <h2>Ingest</h2>
@@ -147,6 +190,20 @@ const page = (mapsKey: string, mapId: string, incomingDir: string) => /* html */
     $('upload').disabled = false;
   });
 
+  $('uploadzip').addEventListener('click', async () => {
+    const inp = $('zip');
+    if (!inp.files.length) return;
+    const fd = new FormData();
+    fd.append('zip', inp.files[0]);
+    $('zstatus').textContent = 'Uploading & extracting…'; $('uploadzip').disabled = true;
+    try {
+      const r = await fetch('/api/upload-zip', { method:'POST', body: fd }).then(r => r.json());
+      if (r.ok) { $('zstatus').textContent = 'Extracted ' + r.count + ' file(s).'; $('dir').value = r.dir; }
+      else $('zstatus').textContent = 'Failed: ' + (r.error || 'error');
+    } catch { $('zstatus').textContent = 'Upload failed.'; }
+    inp.value = ''; $('uploadzip').disabled = false;
+  });
+
   $('run').addEventListener('click', () => {
     const params = new URLSearchParams({
       source: $('source').value,
@@ -233,6 +290,20 @@ export async function runServer(port = 4321): Promise<void> {
   app.post("/api/upload", upload.array("files"), (req, res) => {
     const files = (req.files as Express.Multer.File[] | undefined) ?? [];
     res.json({ ok: true, count: files.length, dir: config.incomingDir });
+  });
+
+  const uploadZip = multer({ dest: path.join(config.cacheDir, "uploads") });
+  app.post("/api/upload-zip", uploadZip.single("zip"), async (req, res) => {
+    const file = req.file;
+    if (!file) return res.status(400).json({ error: "no file" });
+    try {
+      const count = await extractMediaZip(file.path, config.incomingDir);
+      res.json({ ok: true, count, dir: config.incomingDir });
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message });
+    } finally {
+      fs.unlink(file.path).catch(() => {});
+    }
   });
   app.get("/api/pending", async (_req, res) => res.json(await loadPending()));
   app.get("/api/manifest", async (_req, res) => res.json(await loadManifest()));
