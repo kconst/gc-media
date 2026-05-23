@@ -49,16 +49,18 @@ if ! /usr/local/bin/caddy version 2>/dev/null | grep -q "v${CADDY_VERSION}"; the
 fi
 
 echo "== fetching secrets from SSM (${GC_SSM_PREFIX}) =="
-ssm() { aws ssm get-parameter --region "$GC_REGION" --name "${GC_SSM_PREFIX}/$1" --with-decryption --query Parameter.Value --output text; }
+# Tolerant: a missing parameter yields an empty value rather than aborting, so
+# the panel still comes up (uploads/placement/browse work; AI ingest needs the
+# Anthropic key, the placement map needs the Maps key).
+ssm() { aws ssm get-parameter --region "$GC_REGION" --name "${GC_SSM_PREFIX}/$1" --with-decryption --query Parameter.Value --output text 2>/dev/null || true; }
 ANTHROPIC_API_KEY=$(ssm ANTHROPIC_API_KEY)
 MAPS_API_KEY=$(ssm GOOGLE_MAPS_API_KEY)
 MAPS_MAP_ID=$(ssm GOOGLE_MAPS_MAP_ID)
 PANEL_PASSWORD=$(ssm PANEL_PASSWORD)
 
-# Bucket + CloudFront come from the instance's own AWS context where possible,
-# but are simplest to read from SSM too; fall back to env if pre-set.
-MEDIA_BUCKET=$(ssm MEDIA_BUCKET 2>/dev/null || echo "${MEDIA_BUCKET:-}")
-CLOUDFRONT_DOMAIN=$(ssm CLOUDFRONT_DOMAIN 2>/dev/null || echo "${CLOUDFRONT_DOMAIN:-}")
+# Bucket + CloudFront are read from SSM too (set them as plain String params).
+MEDIA_BUCKET=$(ssm MEDIA_BUCKET)
+CLOUDFRONT_DOMAIN=$(ssm CLOUDFRONT_DOMAIN)
 
 echo "== writing /etc/gc-media.env =="
 umask 077
