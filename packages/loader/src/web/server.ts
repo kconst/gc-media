@@ -43,6 +43,7 @@ const page = (mapsKey: string, mapId: string, incomingDir: string) => /* html */
   .meta .src { color:#5a6473; }
   .pin button { background:#cf222e; padding:4px 8px; font-size:12px; margin-top:4px; }
   .empty { color:#8a93a0; font-size:13px; }
+  footer { padding:6px 16px; background:#f4f5f7; border-top:1px solid var(--b); font-size:12px; color:#5a6473; }
 </style></head>
 <body>
 <header>Grand Canyon Media — local control panel</header>
@@ -84,6 +85,7 @@ const page = (mapsKey: string, mapId: string, incomingDir: string) => /* html */
   </div>
   <div id="right"><div id="map"></div></div>
 </main>
+<footer>Done ingesting? Stop this instance to avoid charges — AWS Console → EC2 → Instances → Stop. The panel URL stays the same when you start it again.</footer>
 <script>
   let map, dragId = null;
   const $ = (id) => document.getElementById(id);
