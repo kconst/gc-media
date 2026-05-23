@@ -67,3 +67,15 @@ variable "ssm_param_prefix" {
   type        = string
   default     = "/gc-media"
 }
+
+variable "vpc_id" {
+  description = "VPC for the processor (this account has no default VPC, so set it explicitly)."
+  type        = string
+  default     = ""
+}
+
+variable "subnet_id" {
+  description = "Public subnet (routes to an internet gateway) for the processor instance."
+  type        = string
+  default     = ""
+}

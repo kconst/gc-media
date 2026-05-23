@@ -92,6 +92,7 @@ resource "aws_security_group" "processor" {
   count       = var.enable_processor ? 1 : 0
   name        = "${var.project}-processor"
   description = "gc-media processor: HTTP/HTTPS in, all out"
+  vpc_id      = var.vpc_id
   tags        = local.tags
 
   ingress {
@@ -130,12 +131,14 @@ locals {
 }
 
 resource "aws_instance" "processor" {
-  count                  = var.enable_processor ? 1 : 0
-  ami                    = data.aws_ami.al2023[0].id
-  instance_type          = var.processor_instance_type
-  iam_instance_profile   = aws_iam_instance_profile.processor[0].name
-  vpc_security_group_ids = [aws_security_group.processor[0].id]
-  tags                   = merge(local.tags, { Name = "${var.project}-processor" })
+  count                       = var.enable_processor ? 1 : 0
+  ami                         = data.aws_ami.al2023[0].id
+  instance_type               = var.processor_instance_type
+  iam_instance_profile        = aws_iam_instance_profile.processor[0].name
+  subnet_id                   = var.subnet_id
+  associate_public_ip_address = true
+  vpc_security_group_ids      = [aws_security_group.processor[0].id]
+  tags                        = merge(local.tags, { Name = "${var.project}-processor" })
 
   root_block_device {
     volume_size = 30
