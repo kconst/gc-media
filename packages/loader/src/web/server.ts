@@ -7,7 +7,8 @@ import multer from "multer";
 import unzipper from "unzipper";
 import type { Asset } from "@gc-media/shared";
 import { config } from "../config.js";
-import { runPipeline, type RunOptions } from "../pipeline.js";
+import { runPipeline, runPipelineOnItems, type RunOptions } from "../pipeline.js";
+import { listGoproMedia, downloadGoproMedia } from "../sources/gopro.js";
 import { loadPending, savePending } from "../pending.js";
 import { loadManifest, removeAsset, saveAndPublish, upsertAssets } from "../manifest.js";
 import { State } from "../state.js";
@@ -132,7 +133,12 @@ const page = (mapsKey: string, mapId: string, incomingDir: string) => /* html */
       <h2>Import from GoPro Cloud</h2>
       <p class="empty" style="margin:0 0 6px">Paste your gp_access_token (gopro.com cookie / DevTools). Pulls each clip's real recording time and places it on the GPX track by filename.</p>
       <input id="gptoken" type="password" placeholder="token (eyJ…)"/>
-      <div class="row"><button id="gpimport" class="secondary">Import &amp; place</button> <span id="gpstatus" class="empty"></span></div>
+      <div class="row">
+        <button id="gpingest">Download &amp; ingest all</button>
+        <button id="gpimport" class="secondary">Import times only</button>
+        <span id="gpstatus" class="empty"></span>
+      </div>
+      <p class="empty" style="margin:6px 0 0"><b>Download &amp; ingest</b>: pull every clip from GoPro Cloud, transcode, and place by time (progress shows in the ingestion log). <b>Import times only</b>: place clips you already uploaded.</p>
       <pre id="gplog" style="display:none"></pre>
     </section>
     <section>
@@ -338,6 +344,20 @@ const page = (mapsKey: string, mapId: string, incomingDir: string) => /* html */
     $('bulkplace').disabled = false;
   });
 
+  $('gpingest').addEventListener('click', async () => {
+    const token = $('gptoken').value.trim();
+    if (!token) { $('gpstatus').textContent = 'Paste your GoPro token first.'; return; }
+    if (!confirm('Download and ingest ALL clips from GoPro Cloud? This can take a while.')) return;
+    $('gpstatus').textContent = 'Started — watch the ingestion log below.';
+    try {
+      const j = await fetch('/api/gopro-ingest', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token, noAi: $('noai').checked }) }).then(r => r.json());
+      if (j.active) { $('gpstatus').textContent = 'A run is already in progress.'; return; }
+      if (!j.ok) { $('gpstatus').textContent = j.error || 'Failed to start.'; return; }
+      $('gptoken').value = '';
+      pollLog();
+    } catch { $('gpstatus').textContent = 'Request failed.'; }
+  });
+
   $('gpimport').addEventListener('click', async () => {
     const token = $('gptoken').value.trim();
     if (!token) { $('gpstatus').textContent = 'Paste your GoPro token first.'; return; }
@@ -537,6 +557,49 @@ export async function runServer(port = 4321): Promise<void> {
     })
       .then(() => pushLog("Done."))
       .catch((err) => pushLog(`ERROR: ${(err as Error).message}`))
+      .finally(() => {
+        runActive = false;
+      });
+
+    res.json({ ok: true });
+  });
+
+  // Download every clip from GoPro Cloud and ingest it, a few at a time so the
+  // disk never fills. Reuses the run-log channel so the panel shows progress.
+  app.post("/api/gopro-ingest", (req, res) => {
+    if (runActive) return res.json({ ok: false, active: true });
+    const body = req.body as { token?: string; noAi?: boolean };
+    const token = body.token?.trim().replace(/^Bearer\s+/i, "");
+    if (!token) return res.status(400).json({ error: "no token" });
+
+    runActive = true;
+    runLog = [];
+    pushLog("Listing GoPro Cloud media…");
+
+    (async () => {
+      const media = await listGoproMedia(token);
+      pushLog(`Found ${media.length} clips in GoPro Cloud.`);
+      const BATCH = 3;
+      for (let i = 0; i < media.length; i += BATCH) {
+        const batch = media.slice(i, i + BATCH);
+        const items = [];
+        for (const m of batch) {
+          try {
+            pushLog(`Downloading ${m.filename}…`);
+            items.push(await downloadGoproMedia(token, m, config.incomingDir));
+          } catch (e) {
+            pushLog(`  FAILED download ${m.filename}: ${(e as Error).message}`);
+          }
+        }
+        if (items.length) {
+          await runPipelineOnItems(items, { source: "local", noAi: !!body.noAi, log: pushLog });
+          for (const it of items) await fs.unlink(it.localPath).catch(() => {});
+        }
+        pushLog(`Progress: ${Math.min(i + BATCH, media.length)}/${media.length}`);
+      }
+      pushLog("GoPro ingest complete.");
+    })()
+      .catch((e) => pushLog(`ERROR: ${(e as Error).message}`))
       .finally(() => {
         runActive = false;
       });

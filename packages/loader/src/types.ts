@@ -11,6 +11,9 @@ export interface IngestItem {
   /** Which source produced it, for credit/debugging. */
   source: string;
   credit?: string;
+  /** Authoritative capture time (epoch ms) from the source, when known
+   * (e.g. GoPro Cloud captured_at) — preferred over file metadata. */
+  capturedAt?: number;
 }
 
 /** A continuous GPS sample from GoPro telemetry, used for time-matching. */

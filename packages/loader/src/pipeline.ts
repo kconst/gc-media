@@ -53,7 +53,23 @@ export async function runPipeline(opts: RunOptions): Promise<void> {
   const all = await gather(opts);
   const items = all.filter((it) => opts.force || !state.has(it.id));
   log(`Discovered ${all.length} assets, ${items.length} new to process.`);
+  await runItems(items, opts, state, log);
+}
 
+/** Process an explicit set of already-gathered items (e.g. one GoPro batch). */
+export async function runPipelineOnItems(items: IngestItem[], opts: RunOptions): Promise<void> {
+  const log = opts.log ?? ((m: string) => console.log(m));
+  const state = await State.load();
+  const fresh = items.filter((it) => opts.force || !state.has(it.id));
+  await runItems(fresh, opts, state, log);
+}
+
+async function runItems(
+  items: IngestItem[],
+  opts: RunOptions,
+  state: State,
+  log: (m: string) => void,
+): Promise<void> {
   // Pass 1: build the GoPro GPS timeline + remember each clip's own position.
   const resolver = new GeoResolver();
   const ownGps = new Map<string, GpsSample[]>();
@@ -100,7 +116,7 @@ export async function runPipeline(opts: RunOptions): Promise<void> {
       const videoTime =
         it.type === "video" && !ownTrack ? await readVideoCapturedAt(it.localPath) : undefined;
 
-      const capturedAt = exif.capturedAt ?? sidecar?.capturedAt ?? ownTrack?.[0]?.t ?? videoTime;
+      const capturedAt = it.capturedAt ?? exif.capturedAt ?? sidecar?.capturedAt ?? ownTrack?.[0]?.t ?? videoTime;
       // Shift the capture time to align a non-UTC camera clock with the GPX track.
       const matchAt =
         capturedAt !== undefined && opts.timeOffsetMinutes
