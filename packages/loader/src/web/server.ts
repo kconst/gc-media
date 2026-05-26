@@ -11,7 +11,8 @@ import { runPipeline, type RunOptions } from "../pipeline.js";
 import { loadPending, savePending } from "../pending.js";
 import { loadManifest, removeAsset, saveAndPublish, upsertAssets } from "../manifest.js";
 import { State } from "../state.js";
-import { listGpxFiles } from "../meta/gpx.js";
+import { listGpxFiles, loadGpxTracks } from "../meta/gpx.js";
+import { GeoResolver } from "../geo/resolver.js";
 
 function timingSafeEqual(a: string, b: string): boolean {
   const ab = Buffer.from(a);
@@ -192,15 +193,27 @@ const page = (mapsKey: string, mapId: string, incomingDir: string) => /* html */
       const el = document.createElement('div');
       el.className = 'item'; el.draggable = true; el.dataset.id = it.id;
       el.innerHTML = '<img src="'+it.thumbnailUrl+'"/><div class="meta"><b>'+(it.type)+'</b><br/>'+(it.description||'').slice(0,90)+
-        '<div class="geo"><input class="ll" placeholder="lat, lng"/><button class="secondary place">Place</button></div></div>';
+        '<div class="geo"><input class="ll" placeholder="lat, lng"/><button class="secondary place">Place</button></div>'+
+        '<div class="geo"><input class="ts" type="datetime-local"/><button class="secondary placetime" title="Find this time on the GPX track">By time</button></div></div>';
       el.addEventListener('dragstart', () => dragId = it.id);
       const inp = el.querySelector('.ll');
-      inp.draggable = false;
-      inp.addEventListener('mousedown', (e) => e.stopPropagation()); // type without starting a drag
+      const ts = el.querySelector('.ts');
+      for (const f of [inp, ts]) { // let fields be edited without starting a drag
+        f.draggable = false;
+        f.addEventListener('mousedown', (e) => e.stopPropagation());
+      }
       el.querySelector('.place').addEventListener('click', async () => {
         const ll = parseLatLng(inp.value);
         if (!ll) { alert('Enter coordinates as "lat, lng", e.g. 36.0501, -112.1201'); return; }
         await fetch('/api/place', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ id: it.id, lat: ll.lat, lng: ll.lng }) });
+        refresh();
+      });
+      el.querySelector('.placetime').addEventListener('click', async () => {
+        if (!ts.value) { alert('Pick the recording date & time (read it from GoPro Cloud).'); return; }
+        const t = new Date(ts.value).getTime(); // datetime-local parsed in the browser timezone
+        if (!isFinite(t)) { alert('Invalid date/time.'); return; }
+        const j = await fetch('/api/place-by-time', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ id: it.id, t }) }).then(r => r.json());
+        if (!j.ok) { alert(j.error || 'Could not place by time.'); return; }
         refresh();
       });
       box.appendChild(el);
@@ -456,16 +469,19 @@ export async function runServer(port = 4321): Promise<void> {
     res.json({ from, lines: runLog.slice(from), total: runLog.length, active: runActive });
   });
 
-  app.post("/api/place", async (req, res) => {
-    const { id, lat, lng } = req.body as { id: string; lat: number; lng: number };
-    if (typeof lat !== "number" || typeof lng !== "number" || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
-      return res.status(400).json({ error: "invalid coordinates" });
-    }
+  // Move a pending item onto the map: publish it as a pin and drop it from the
+  // pending queue. Returns false if the id is no longer pending.
+  async function commitPlacement(
+    id: string,
+    lat: number,
+    lng: number,
+    source: Asset["geoSource"],
+  ): Promise<boolean> {
     const pending = await loadPending();
     const item = pending.find((p) => p.id === id);
-    if (!item) return res.status(404).json({ error: "not found" });
+    if (!item) return false;
 
-    const asset: Asset = { ...item, lat, lng, geoSource: "manual" };
+    const asset: Asset = { ...item, lat, lng, geoSource: source };
     await saveAndPublish(upsertAssets(await loadManifest(), [asset]));
 
     const state = await State.load();
@@ -474,7 +490,41 @@ export async function runServer(port = 4321): Promise<void> {
     await state.save();
 
     await savePending(pending.filter((p) => p.id !== id));
-    res.json({ ok: true });
+    return true;
+  }
+
+  app.post("/api/place", async (req, res) => {
+    const { id, lat, lng } = req.body as { id: string; lat: number; lng: number };
+    if (typeof lat !== "number" || typeof lng !== "number" || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+      return res.status(400).json({ error: "invalid coordinates" });
+    }
+    const ok = await commitPlacement(id, lat, lng, "manual");
+    res.status(ok ? 200 : 404).json(ok ? { ok: true } : { error: "not found" });
+  });
+
+  // Place a pending item by recording time: find where the GPX track was at
+  // that instant and pin it there.
+  app.post("/api/place-by-time", async (req, res) => {
+    const { id, t } = req.body as { id: string; t: number };
+    if (typeof t !== "number" || !Number.isFinite(t)) {
+      return res.status(400).json({ error: "invalid time" });
+    }
+    const track = await loadGpxTracks(config.incomingDir);
+    if (!track.length) return res.status(400).json({ error: "No GPX track uploaded." });
+
+    const resolver = new GeoResolver();
+    resolver.addTrack(track);
+    const near = resolver.nearest(t);
+    const WINDOW_MS = 15 * 60 * 1000;
+    if (!near || near.gapMs > WINDOW_MS) {
+      const r = resolver.range();
+      const fmt = (x?: number) => (x ? new Date(x).toISOString().replace(".000Z", "Z") : "?");
+      return res.status(404).json({
+        error: `No GPX point near that time. Track covers ${fmt(r?.start)} – ${fmt(r?.end)} (UTC). Check the date/timezone.`,
+      });
+    }
+    const ok = await commitPlacement(id, near.point.lat, near.point.lng, "gpx");
+    res.status(ok ? 200 : 404).json(ok ? { ok: true } : { error: "not found" });
   });
 
   app.post("/api/move", async (req, res) => {

@@ -23,6 +23,36 @@ export class GeoResolver {
     return this.track.length;
   }
 
+  /** Earliest and latest sample times (epoch ms), or undefined if no track. */
+  range(): { start: number; end: number } | undefined {
+    if (this.track.length === 0) return undefined;
+    return { start: this.track[0]!.t, end: this.track[this.track.length - 1]!.t };
+  }
+
+  /** Nearest sample to time `t`, with the gap in ms. Undefined if no track. */
+  nearest(t: number): { point: GeoPoint; gapMs: number } | undefined {
+    if (this.track.length === 0) return undefined;
+    let lo = 0;
+    let hi = this.track.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (this.track[mid]!.t < t) lo = mid + 1;
+      else hi = mid;
+    }
+    const candidates = [this.track[lo - 1], this.track[lo]].filter(Boolean) as GpsSample[];
+    let best: GpsSample | undefined;
+    let bestGap = Infinity;
+    for (const c of candidates) {
+      const gap = Math.abs(c.t - t);
+      if (gap < bestGap) {
+        bestGap = gap;
+        best = c;
+      }
+    }
+    if (!best) return undefined;
+    return { point: { lat: best.lat, lng: best.lng }, gapMs: bestGap };
+  }
+
   /** Median position of a clip's own samples — used to place the video pin. */
   static centroid(samples: GpsSample[]): GeoPoint | undefined {
     if (samples.length === 0) return undefined;
@@ -54,26 +84,7 @@ export class GeoResolver {
   }
 
   private matchByTime(t: number): GeoPoint | undefined {
-    if (this.track.length === 0) return undefined;
-    // Binary search for the closest sample.
-    let lo = 0;
-    let hi = this.track.length - 1;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (this.track[mid]!.t < t) lo = mid + 1;
-      else hi = mid;
-    }
-    const candidates = [this.track[lo - 1], this.track[lo]].filter(Boolean) as GpsSample[];
-    let best: GpsSample | undefined;
-    let bestGap = Infinity;
-    for (const c of candidates) {
-      const gap = Math.abs(c.t - t);
-      if (gap < bestGap) {
-        bestGap = gap;
-        best = c;
-      }
-    }
-    if (best && bestGap <= MATCH_WINDOW_MS) return { lat: best.lat, lng: best.lng };
-    return undefined;
+    const near = this.nearest(t);
+    return near && near.gapMs <= MATCH_WINDOW_MS ? near.point : undefined;
   }
 }
