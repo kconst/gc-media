@@ -44,6 +44,7 @@ export async function uploadBuffer(
   key: string,
   body: Buffer | string,
   contentType: string,
+  cacheControl?: string,
 ): Promise<string> {
   await s3().send(
     new PutObjectCommand({
@@ -51,6 +52,7 @@ export async function uploadBuffer(
       Key: key,
       Body: body,
       ContentType: contentType,
+      CacheControl: cacheControl,
     }),
   );
   return cloudfrontUrl(key);

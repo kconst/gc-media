@@ -48,10 +48,13 @@ export async function saveAndPublish(manifest: Manifest): Promise<void> {
   await fs.writeFile(config.manifestPath, json);
 
   if (config.manifest.store === "s3") {
+    // no-cache so the map always revalidates and picks up new pins promptly,
+    // rather than serving a CloudFront-cached copy for the default TTL.
     const url = await uploadBuffer(
       config.manifest.key,
       json,
       "application/json",
+      "no-cache",
     );
     console.log(`Published manifest → ${url}`);
   }
