@@ -1,11 +1,12 @@
-import fs from "node:fs/promises";
+import { createReadStream } from "node:fs";
 import { createRequire } from "node:module";
 import type { GpsSample } from "../types.js";
 
 // Pure-JS CommonJS GPMF parsers without usable type declarations.
 const require = createRequire(import.meta.url);
 const gpmfExtract = require("gpmf-extract") as (
-  buf: Buffer,
+  input: unknown,
+  opts?: unknown,
 ) => Promise<{ rawData: Buffer; timing: unknown }>;
 const goproTelemetry = require("gopro-telemetry") as (
   input: unknown,
@@ -34,12 +35,33 @@ function silenceConsole(): () => void {
   return () => Object.assign(console, saved);
 }
 
+/**
+ * Feed an mp4 to gpmf-extract's Node "function" input mode: stream it in
+ * chunks so mp4box.js can release consumed buffers, instead of holding the
+ * whole (multi-GB) clip in memory — which OOM-kills small instances.
+ */
+function streamInto(localPath: string, chunkSize = 4 * 1024 * 1024) {
+  return (mp4boxFile: { appendBuffer: (b: ArrayBuffer) => void; flush: () => void }) => {
+    const stream = createReadStream(localPath, { highWaterMark: chunkSize });
+    let offset = 0;
+    stream.on("data", (data: string | Buffer) => {
+      const chunk = data as Buffer;
+      // Copy into a standalone ArrayBuffer (Node Buffers share a pool) and tag
+      // its byte offset so mp4box can stitch chunks together.
+      const ab = new Uint8Array(chunk).buffer as ArrayBuffer & { fileStart?: number };
+      ab.fileStart = offset;
+      offset += chunk.length;
+      mp4boxFile.appendBuffer(ab);
+    });
+    stream.on("end", () => mp4boxFile.flush());
+  };
+}
+
 export async function extractGoproTrack(localPath: string): Promise<GpsSample[]> {
-  const buffer = await fs.readFile(localPath);
   const restore = silenceConsole();
   let extracted: { rawData: Buffer; timing: unknown };
   try {
-    extracted = await withTimeout(gpmfExtract(buffer), 60_000);
+    extracted = await withTimeout(gpmfExtract(streamInto(localPath), { browserMode: false }), 180_000);
   } catch {
     restore();
     return [];
