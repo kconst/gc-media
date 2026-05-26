@@ -1,6 +1,15 @@
-import { createReadStream } from "node:fs";
+import fs from "node:fs/promises";
 import { createRequire } from "node:module";
 import type { GpsSample } from "../types.js";
+
+// Parsing GPMF telemetry loads the whole clip into memory, so a multi-GB 4K
+// file can OOM a small instance. Skip the scan above this size — such clips
+// can still be placed from a GPX track by timestamp. Override with
+// GOPRO_MAX_SCAN_MB (0 disables the limit).
+const MAX_SCAN_BYTES = (() => {
+  const mb = Number(process.env.GOPRO_MAX_SCAN_MB);
+  return Number.isFinite(mb) ? mb * 1024 * 1024 : 600 * 1024 * 1024;
+})();
 
 // Pure-JS CommonJS GPMF parsers without usable type declarations.
 const require = createRequire(import.meta.url);
@@ -35,33 +44,23 @@ function silenceConsole(): () => void {
   return () => Object.assign(console, saved);
 }
 
-/**
- * Feed an mp4 to gpmf-extract's Node "function" input mode: stream it in
- * chunks so mp4box.js can release consumed buffers, instead of holding the
- * whole (multi-GB) clip in memory — which OOM-kills small instances.
- */
-function streamInto(localPath: string, chunkSize = 4 * 1024 * 1024) {
-  return (mp4boxFile: { appendBuffer: (b: ArrayBuffer) => void; flush: () => void }) => {
-    const stream = createReadStream(localPath, { highWaterMark: chunkSize });
-    let offset = 0;
-    stream.on("data", (data: string | Buffer) => {
-      const chunk = data as Buffer;
-      // Copy into a standalone ArrayBuffer (Node Buffers share a pool) and tag
-      // its byte offset so mp4box can stitch chunks together.
-      const ab = new Uint8Array(chunk).buffer as ArrayBuffer & { fileStart?: number };
-      ab.fileStart = offset;
-      offset += chunk.length;
-      mp4boxFile.appendBuffer(ab);
-    });
-    stream.on("end", () => mp4boxFile.flush());
-  };
-}
+export async function extractGoproTrack(
+  localPath: string,
+  log?: (msg: string) => void,
+): Promise<GpsSample[]> {
+  if (MAX_SCAN_BYTES > 0) {
+    const size = await fs.stat(localPath).then((s) => s.size, () => 0);
+    if (size > MAX_SCAN_BYTES) {
+      log?.(`    skipping GPS scan (${Math.round(size / 1048576)} MB); will place by GPX/timestamp`);
+      return [];
+    }
+  }
 
-export async function extractGoproTrack(localPath: string): Promise<GpsSample[]> {
+  const buffer = await fs.readFile(localPath);
   const restore = silenceConsole();
   let extracted: { rawData: Buffer; timing: unknown };
   try {
-    extracted = await withTimeout(gpmfExtract(streamInto(localPath), { browserMode: false }), 180_000);
+    extracted = await withTimeout(gpmfExtract(buffer), 60_000);
   } catch {
     restore();
     return [];

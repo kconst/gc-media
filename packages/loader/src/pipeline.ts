@@ -61,7 +61,7 @@ export async function runPipeline(opts: RunOptions): Promise<void> {
   if (videos.length) log(`Scanning ${videos.length} video(s) for a GPS track…`);
   for (const it of videos) {
     log(`  reading GPS from ${it.originalFilename}…`);
-    const track = await extractGoproTrack(it.localPath);
+    const track = await extractGoproTrack(it.localPath, log);
     if (track.length) {
       resolver.addTrack(track);
       ownGps.set(it.id, track);
