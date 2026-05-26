@@ -579,8 +579,19 @@ export async function runServer(port = 4321): Promise<void> {
 
     (async () => {
       let media = await listGoproMedia(token);
+      // Resumable: skip clips already on the map or pending (by filename), so a
+      // re-run with a fresh token continues instead of re-downloading.
+      const manifest = await loadManifest();
+      const pending = await loadPending();
+      const known = new Set(
+        [...manifest.assets, ...pending]
+          .map((a) => a.originalFilename?.toLowerCase())
+          .filter(Boolean) as string[],
+      );
+      const before = media.length;
+      media = media.filter((m) => !known.has(path.basename(m.filename).toLowerCase()));
       if (limit) media = media.slice(0, limit);
-      pushLog(`Found ${media.length} clips in GoPro Cloud.`);
+      pushLog(`Found ${before} clips; ${media.length} new to ingest (skipping ${before - media.length} already done).`);
       // One at a time: GoPro originals can be multi-GB, so keep peak disk low.
       const BATCH = 1;
       for (let i = 0; i < media.length; i += BATCH) {
