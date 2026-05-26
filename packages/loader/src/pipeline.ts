@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 import { emptyLabels, type Asset, type Labels, type TrackPoint } from "@gc-media/shared";
 import { config } from "./config.js";
@@ -141,9 +142,16 @@ async function runItems(
       let labels: Labels = emptyLabels();
       if (!opts.noAi) {
         const frames = it.type === "video" ? await sampleFrames(it.localPath) : [der.full.path];
-        const analysis = await analyzeImages(frames, it.type === "video");
-        description = analysis.description;
-        labels = analysis.labels;
+        try {
+          const analysis = await analyzeImages(frames, it.type === "video");
+          description = analysis.description;
+          labels = analysis.labels;
+        } finally {
+          // Drop the sampled video frames (temp dir under cacheDir).
+          if (it.type === "video" && frames[0]) {
+            await fs.rm(path.dirname(frames[0]), { recursive: true, force: true }).catch(() => {});
+          }
+        }
       }
 
       const base: PendingAsset = {
@@ -168,6 +176,8 @@ async function runItems(
 
       state.set({ id: it.id, processedAt: new Date().toISOString(), geolocated: !!geo });
       await state.save();
+      // Reclaim the uploaded derivatives so a large batch can't fill the disk.
+      await fs.rm(path.join(config.derivativesDir, it.id), { recursive: true, force: true }).catch(() => {});
       log(`  processed ${it.originalFilename}${geo ? ` (${geo.source})` : ""}`);
     } catch (err) {
       log(`  FAILED ${it.originalFilename}: ${(err as Error).message}`);

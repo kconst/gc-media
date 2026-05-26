@@ -581,7 +581,8 @@ export async function runServer(port = 4321): Promise<void> {
       let media = await listGoproMedia(token);
       if (limit) media = media.slice(0, limit);
       pushLog(`Found ${media.length} clips in GoPro Cloud.`);
-      const BATCH = 3;
+      // One at a time: GoPro originals can be multi-GB, so keep peak disk low.
+      const BATCH = 1;
       for (let i = 0; i < media.length; i += BATCH) {
         const batch = media.slice(i, i + BATCH);
         const items = [];
