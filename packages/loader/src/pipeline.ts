@@ -137,6 +137,7 @@ export async function runPipeline(opts: RunOptions): Promise<void> {
         fullUrl,
         posterUrl,
         capturedAt: capturedAt ? new Date(capturedAt).toISOString() : undefined,
+        originalFilename: it.originalFilename,
         description,
         labels,
         credit: it.credit,

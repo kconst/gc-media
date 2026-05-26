@@ -50,6 +50,9 @@ export interface Asset {
   /** ISO-8601 capture time, when known. */
   capturedAt?: string;
 
+  /** Original filename at ingest (e.g. GX010055.MP4); used to match by name. */
+  originalFilename?: string;
+
   description: string;
   labels: Labels;
 

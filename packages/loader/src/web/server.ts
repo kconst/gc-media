@@ -129,6 +129,14 @@ const page = (mapsKey: string, mapId: string, incomingDir: string) => /* html */
       <pre id="log">Idle.</pre>
     </section>
     <section>
+      <h2>Bulk place by timestamps</h2>
+      <p class="empty" style="margin:0 0 6px">Upload a JSON of filename → recording time (from GoPro Cloud). Times use this browser's timezone. Pins land on the GPX track at each time.</p>
+      <input id="bulkjson" type="file" accept=".json,application/json"/>
+      <textarea id="bulktext" rows="4" placeholder='{"GX010055.MP4": "May 19, 2026 2:44 PM"}  — or paste here instead of a file' style="width:100%;font:inherit;border:1px solid var(--b);border-radius:6px;padding:6px;margin-top:6px"></textarea>
+      <div class="row"><button id="bulkplace" class="secondary">Place from JSON</button> <span id="bulkstatus" class="empty"></span></div>
+      <pre id="bulklog" style="display:none"></pre>
+    </section>
+    <section>
       <h2>Needs placement (<span id="pcount">0</span>)</h2>
       <div id="pending"><div class="empty">Nothing pending.</div></div>
     </section>
@@ -155,13 +163,17 @@ const page = (mapsKey: string, mapId: string, incomingDir: string) => /* html */
     renderTracks(tracks || []);
   }
 
-  function fmtSpan(start, end) {
+  function fmtLocal(ms) {
+    return new Date(ms).toLocaleString([], { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' });
+  }
+  function fmtRange(start, end) {
     if (!start) return '';
-    const d = new Date(start);
-    const day = d.toLocaleDateString([], { month:'short', day:'numeric' });
-    const t0 = d.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
-    const t1 = end ? new Date(end).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }) : '';
-    return day + ' ' + t0 + (t1 ? '–' + t1 : '');
+    if (!end || end === start) return fmtLocal(start);
+    const s = new Date(start), e = new Date(end);
+    const endStr = s.toDateString() === e.toDateString()
+      ? e.toLocaleTimeString([], { hour:'numeric', minute:'2-digit' })
+      : fmtLocal(end);
+    return fmtLocal(start) + ' – ' + endStr;
   }
 
   function renderTracks(tracks) {
@@ -169,11 +181,14 @@ const page = (mapsKey: string, mapId: string, incomingDir: string) => /* html */
     const box = $('tracks');
     if (!tracks.length) { box.innerHTML = '<div class="empty">No tracks uploaded.</div>'; return; }
     box.innerHTML = '';
+    let lo = Infinity, hi = -Infinity;
     for (const t of tracks) {
+      if (t.start) lo = Math.min(lo, t.start);
+      if (t.end) hi = Math.max(hi, t.end);
       const el = document.createElement('div');
       el.className = 'pin';
       el.innerHTML = '<div class="meta"><b>'+t.name+'</b><br/>'+
-        '<span class="src">'+t.points+' pts · '+fmtSpan(t.start, t.end)+(t.hasHr ? ' · HR' : '')+'</span><br/>'+
+        '<span class="src">'+t.points+' pts · '+fmtRange(t.start, t.end)+(t.hasHr ? ' · HR' : '')+'</span><br/>'+
         '<button class="remove">Remove</button></div>';
       el.querySelector('.remove').addEventListener('click', async () => {
         if (!confirm('Remove track "'+t.name+'"? It will no longer place videos.')) return;
@@ -274,6 +289,46 @@ const page = (mapsKey: string, mapId: string, incomingDir: string) => /* html */
       else $('zstatus').textContent = 'Failed: ' + (r.error || 'error');
     } catch { $('zstatus').textContent = 'Upload failed.'; }
     inp.value = ''; $('uploadzip').disabled = false;
+  });
+
+  // Accept either {"file.MP4":"<time>"} or [{filename,timestamp}] and convert
+  // each time to an epoch using this browser's timezone (same as "By time").
+  function parseBulk(text) {
+    const data = JSON.parse(text);
+    const rows = Array.isArray(data)
+      ? data.map(e => [e.filename || e.name || e.file, e.timestamp || e.time || e.date || e.capturedAt])
+      : Object.entries(data);
+    const items = []; const bad = [];
+    for (const [filename, ts] of rows) {
+      const t = new Date(ts).getTime();
+      if (filename && isFinite(t)) items.push({ filename, t });
+      else bad.push(filename || '(unnamed)');
+    }
+    return { items, bad };
+  }
+
+  $('bulkplace').addEventListener('click', async () => {
+    const fileInp = $('bulkjson');
+    let text = $('bulktext').value.trim();
+    if (!text && fileInp.files.length) text = await fileInp.files[0].text();
+    if (!text) { $('bulkstatus').textContent = 'Choose a JSON file or paste JSON.'; return; }
+    let parsed;
+    try { parsed = parseBulk(text); }
+    catch (e) { $('bulkstatus').textContent = 'Invalid JSON.'; return; }
+    if (!parsed.items.length) { $('bulkstatus').textContent = 'No valid filename/time entries found.'; return; }
+    $('bulkplace').disabled = true; $('bulkstatus').textContent = 'Placing ' + parsed.items.length + '…';
+    try {
+      const j = await fetch('/api/place-bulk', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ items: parsed.items }) }).then(r => r.json());
+      if (!j.ok) { $('bulkstatus').textContent = j.error || 'Failed.'; $('bulkplace').disabled = false; return; }
+      $('bulkstatus').textContent = 'Placed ' + j.placed + ' of ' + j.total + '.';
+      const notPlaced = (j.results || []).filter(r => r.status !== 'placed');
+      const log = $('bulklog');
+      log.style.display = notPlaced.length ? 'block' : 'none';
+      log.textContent = notPlaced.map(r => r.filename + ' — ' + r.status).join('\\n')
+        + (parsed.bad.length ? '\\nunparseable times: ' + parsed.bad.join(', ') : '');
+      refresh();
+    } catch { $('bulkstatus').textContent = 'Request failed.'; }
+    $('bulkplace').disabled = false;
   });
 
   let logCursor = 0;
@@ -525,6 +580,65 @@ export async function runServer(port = 4321): Promise<void> {
     }
     const ok = await commitPlacement(id, near.point.lat, near.point.lng, "gpx");
     res.status(ok ? 200 : 404).json(ok ? { ok: true } : { error: "not found" });
+  });
+
+  // Bulk-place pending items from a filename→time mapping: match each name to a
+  // pending clip, look up its GPX location, and publish them all in one pass.
+  // Times arrive as epoch ms (the browser converts wall-clock in its timezone).
+  app.post("/api/place-bulk", async (req, res) => {
+    const items = (req.body as { items?: { filename: string; t: number }[] }).items ?? [];
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: "no items" });
+    }
+    const track = await loadGpxTracks(config.incomingDir);
+    if (!track.length) return res.status(400).json({ error: "No GPX track uploaded." });
+
+    const resolver = new GeoResolver();
+    resolver.addTrack(track);
+    const WINDOW_MS = 15 * 60 * 1000;
+
+    const pending = await loadPending();
+    const norm = (name: string) => path.basename(name).toLowerCase();
+    const byName = new Map(pending.filter((p) => p.originalFilename).map((p) => [norm(p.originalFilename!), p]));
+
+    const placed: Asset[] = [];
+    const placedIds = new Set<string>();
+    const results: { filename: string; status: string }[] = [];
+    for (const { filename, t } of items) {
+      if (typeof filename !== "string" || typeof t !== "number" || !Number.isFinite(t)) {
+        results.push({ filename: String(filename), status: "bad entry" });
+        continue;
+      }
+      const item = byName.get(norm(filename));
+      if (!item) {
+        results.push({ filename, status: "no pending match" });
+        continue;
+      }
+      if (placedIds.has(item.id)) {
+        results.push({ filename, status: "duplicate" });
+        continue;
+      }
+      const near = resolver.nearest(t);
+      if (!near || near.gapMs > WINDOW_MS) {
+        results.push({ filename, status: "no GPS match (time out of range)" });
+        continue;
+      }
+      placed.push({ ...item, lat: near.point.lat, lng: near.point.lng, geoSource: "gpx" });
+      placedIds.add(item.id);
+      results.push({ filename, status: "placed" });
+    }
+
+    if (placed.length) {
+      await saveAndPublish(upsertAssets(await loadManifest(), placed));
+      const state = await State.load();
+      for (const a of placed) {
+        const rec = state.get(a.id);
+        if (rec) state.set({ ...rec, geolocated: true });
+      }
+      await state.save();
+      await savePending(pending.filter((p) => !placedIds.has(p.id)));
+    }
+    res.json({ ok: true, placed: placed.length, total: items.length, results });
   });
 
   app.post("/api/move", async (req, res) => {
