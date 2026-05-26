@@ -568,16 +568,18 @@ export async function runServer(port = 4321): Promise<void> {
   // disk never fills. Reuses the run-log channel so the panel shows progress.
   app.post("/api/gopro-ingest", (req, res) => {
     if (runActive) return res.json({ ok: false, active: true });
-    const body = req.body as { token?: string; noAi?: boolean };
+    const body = req.body as { token?: string; noAi?: boolean; limit?: number };
     const token = body.token?.trim().replace(/^Bearer\s+/i, "");
     if (!token) return res.status(400).json({ error: "no token" });
+    const limit = Number(body.limit) > 0 ? Number(body.limit) : undefined;
 
     runActive = true;
     runLog = [];
     pushLog("Listing GoPro Cloud media…");
 
     (async () => {
-      const media = await listGoproMedia(token);
+      let media = await listGoproMedia(token);
+      if (limit) media = media.slice(0, limit);
       pushLog(`Found ${media.length} clips in GoPro Cloud.`);
       const BATCH = 3;
       for (let i = 0; i < media.length; i += BATCH) {
