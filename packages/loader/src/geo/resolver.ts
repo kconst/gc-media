@@ -46,7 +46,9 @@ export class GeoResolver {
     if (opts.takeoutGps) return { point: opts.takeoutGps, source: "takeout" };
     if (opts.capturedAt !== undefined) {
       const matched = this.matchByTime(opts.capturedAt);
-      if (matched) return { point: matched, source: "gopro" };
+      // The aggregated track is fed by GPX tracks and/or GoPro telemetry; label
+      // time-matched pins "gpx" since that's the primary external track source.
+      if (matched) return { point: matched, source: "gpx" };
     }
     return undefined;
   }

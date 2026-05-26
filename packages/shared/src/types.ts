@@ -6,7 +6,7 @@
 export type AssetType = "photo" | "video";
 
 /** How a pin's coordinates were determined. */
-export type GeoSource = "exif" | "takeout" | "gopro" | "manual";
+export type GeoSource = "exif" | "takeout" | "gpx" | "gopro" | "manual";
 
 /** The four label categories shown as filterable chips on the map and modal. */
 export const LABEL_CATEGORIES = [

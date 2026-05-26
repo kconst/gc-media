@@ -20,10 +20,10 @@ function timingSafeEqual(a: string, b: string): boolean {
 
 const MEDIA_EXT = new Set([".jpg", ".jpeg", ".png", ".heic", ".heif", ".webp", ".mp4", ".mov", ".m4v", ".avi"]);
 
-/** Keep media files and Takeout JSON sidecars; drop everything else. */
+/** Keep media files, Takeout JSON sidecars, and GPX tracks; drop the rest. */
 function wantedInZip(name: string): boolean {
   const lower = name.toLowerCase();
-  return lower.endsWith(".json") || MEDIA_EXT.has(path.extname(lower));
+  return lower.endsWith(".json") || lower.endsWith(".gpx") || MEDIA_EXT.has(path.extname(lower));
 }
 
 /**
@@ -88,9 +88,9 @@ const page = (mapsKey: string, mapId: string, incomingDir: string) => /* html */
   <div id="left">
     <section>
       <h2>Upload from this device</h2>
-      <input id="files" type="file" multiple accept="image/*,video/*"/>
+      <input id="files" type="file" multiple accept="image/*,video/*,.gpx"/>
       <div class="row"><button id="upload" class="secondary">Upload</button> <span id="ustatus" class="empty"></span></div>
-      <p class="empty" style="margin:6px 0 0">Phone uploads often drop GPS — those land in “Needs placement”.</p>
+      <p class="empty" style="margin:6px 0 0">Add a Garmin .gpx track to place GPS-less videos by timestamp.</p>
     </section>
     <section>
       <h2>Upload Google Takeout (.zip)</h2>
@@ -114,6 +114,8 @@ const page = (mapsKey: string, mapId: string, incomingDir: string) => /* html */
         <label style="margin:0"><input type="checkbox" id="noai"/> Skip AI</label>
         <label style="margin:0"><input type="checkbox" id="force"/> Reprocess all</label>
       </div>
+      <label>GPX time offset (minutes) — shift camera clock to match the track</label>
+      <input id="offset" type="number" value="0" step="1"/>
       <div class="row"><button id="run">Run ingestion</button></div>
       <pre id="log">Idle.</pre>
     </section>
@@ -228,6 +230,7 @@ const page = (mapsKey: string, mapId: string, incomingDir: string) => /* html */
         body: JSON.stringify({
           source: $('source').value, dir: $('dir').value, credit: $('credit').value,
           noAi: $('noai').checked, force: $('force').checked,
+          timeOffsetMinutes: Number($('offset').value) || 0,
         }),
       });
     } catch { appendLog('Could not start run.'); $('run').disabled = false; return; }
@@ -340,6 +343,7 @@ export async function runServer(port = 4321): Promise<void> {
       credit?: string;
       noAi?: boolean;
       force?: boolean;
+      timeOffsetMinutes?: number;
     };
     const source = body.source ?? "local";
 
@@ -358,6 +362,7 @@ export async function runServer(port = 4321): Promise<void> {
       credit: body.credit || undefined,
       force: !!body.force,
       noAi: !!body.noAi,
+      timeOffsetMinutes: body.timeOffsetMinutes || 0,
       log: pushLog,
     })
       .then(() => pushLog("Done."))

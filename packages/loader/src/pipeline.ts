@@ -6,6 +6,8 @@ import { GeoResolver } from "./geo/resolver.js";
 import { readExif } from "./meta/exif.js";
 import { readTakeoutSidecar } from "./meta/takeout.js";
 import { extractGoproTrack } from "./meta/gopro.js";
+import { loadGpxTracks } from "./meta/gpx.js";
+import { readVideoCapturedAt } from "./meta/videoTime.js";
 import { makeDerivatives, sampleFrames } from "./media/derivatives.js";
 import { uploadFile } from "./media/s3.js";
 import { analyzeImages } from "./ai/claude.js";
@@ -22,6 +24,9 @@ export interface RunOptions {
   force?: boolean;
   /** Skip the Claude calls (faster dry runs). */
   noAi?: boolean;
+  /** Minutes to add to each asset's capture time before GPX time-matching
+   * (to align a camera clock that isn't UTC). */
+  timeOffsetMinutes?: number;
   /** Sink for progress lines (defaults to console.log); used by the web UI. */
   log?: (msg: string) => void;
 }
@@ -62,7 +67,18 @@ export async function runPipeline(opts: RunOptions): Promise<void> {
       ownGps.set(it.id, track);
     }
   }
-  log(`GoPro GPS timeline: ${resolver.trackSize} samples.`);
+
+  // Fold in any GPX tracks (e.g. Garmin) found alongside the media, so videos
+  // whose own files carry no GPS can be placed by timestamp.
+  const gpxDirs = [...new Set([opts.dir, config.incomingDir].filter(Boolean) as string[])];
+  for (const d of gpxDirs) {
+    const gpx = await loadGpxTracks(d);
+    if (gpx.length) {
+      resolver.addTrack(gpx);
+      log(`Loaded ${gpx.length} GPX track points from ${d}.`);
+    }
+  }
+  log(`GPS timeline: ${resolver.trackSize} samples.`);
 
   const newAssets: Asset[] = [];
 
@@ -72,13 +88,21 @@ export async function runPipeline(opts: RunOptions): Promise<void> {
       const exif = it.type === "photo" ? await readExif(it.localPath) : {};
       const sidecar = await readTakeoutSidecar(it.localPath);
       const ownTrack = ownGps.get(it.id);
-      const capturedAt = exif.capturedAt ?? sidecar?.capturedAt ?? ownTrack?.[0]?.t;
+      const videoTime =
+        it.type === "video" && !ownTrack ? await readVideoCapturedAt(it.localPath) : undefined;
+
+      const capturedAt = exif.capturedAt ?? sidecar?.capturedAt ?? ownTrack?.[0]?.t ?? videoTime;
+      // Shift the capture time to align a non-UTC camera clock with the GPX track.
+      const matchAt =
+        capturedAt !== undefined && opts.timeOffsetMinutes
+          ? capturedAt + opts.timeOffsetMinutes * 60_000
+          : capturedAt;
 
       const geo = resolver.resolve({
         exifGps: exif.gps,
         ownTrackGps: ownTrack ? GeoResolver.centroid(ownTrack) : undefined,
         takeoutGps: sidecar?.gps,
-        capturedAt,
+        capturedAt: matchAt,
       });
 
       const der = await makeDerivatives(it);
