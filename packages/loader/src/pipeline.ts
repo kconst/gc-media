@@ -146,6 +146,9 @@ async function runItems(
           const analysis = await analyzeImages(frames, it.type === "video");
           description = analysis.description;
           labels = analysis.labels;
+        } catch (e) {
+          // Best-effort: a failed description must not drop the clip.
+          log(`  (AI skipped for ${it.originalFilename}: ${(e as Error).message})`);
         } finally {
           // Drop the sampled video frames (temp dir under cacheDir).
           if (it.type === "video" && frames[0]) {
