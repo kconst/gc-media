@@ -12,11 +12,9 @@ export function useManifest(): ManifestState {
   const [state, setState] = useState<ManifestState>({ loading: true });
 
   useEffect(() => {
-    const url = process.env.NEXT_PUBLIC_MANIFEST_URL;
-    if (!url) {
-      setState({ loading: false, error: "NEXT_PUBLIC_MANIFEST_URL is not set" });
-      return;
-    }
+    // Same-origin path; next.config rewrites it to the CloudFront manifest so
+    // the browser never makes a cross-origin (CORS) request.
+    const url = "/manifest.json";
     let cancelled = false;
     fetch(url, { cache: "no-store" })
       .then((r) => {
