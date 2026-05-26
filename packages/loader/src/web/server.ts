@@ -129,6 +129,13 @@ const page = (mapsKey: string, mapId: string, incomingDir: string) => /* html */
       <pre id="log">Idle.</pre>
     </section>
     <section>
+      <h2>Import from GoPro Cloud</h2>
+      <p class="empty" style="margin:0 0 6px">Paste your gp_access_token (gopro.com cookie / DevTools). Pulls each clip's real recording time and places it on the GPX track by filename.</p>
+      <input id="gptoken" type="password" placeholder="token (eyJ…)"/>
+      <div class="row"><button id="gpimport" class="secondary">Import &amp; place</button> <span id="gpstatus" class="empty"></span></div>
+      <pre id="gplog" style="display:none"></pre>
+    </section>
+    <section>
       <h2>Bulk place by timestamps</h2>
       <p class="empty" style="margin:0 0 6px">Upload a JSON of filename → recording time (from GoPro Cloud). Times use this browser's timezone. Pins land on the GPX track at each time.</p>
       <input id="bulkjson" type="file" accept=".json,application/json"/>
@@ -329,6 +336,24 @@ const page = (mapsKey: string, mapId: string, incomingDir: string) => /* html */
       refresh();
     } catch { $('bulkstatus').textContent = 'Request failed.'; }
     $('bulkplace').disabled = false;
+  });
+
+  $('gpimport').addEventListener('click', async () => {
+    const token = $('gptoken').value.trim();
+    if (!token) { $('gpstatus').textContent = 'Paste your GoPro token first.'; return; }
+    $('gpimport').disabled = true; $('gpstatus').textContent = 'Fetching from GoPro Cloud…';
+    try {
+      const j = await fetch('/api/gopro-import', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token }) }).then(r => r.json());
+      if (!j.ok) { $('gpstatus').textContent = j.error || 'Import failed.'; $('gpimport').disabled = false; return; }
+      $('gpstatus').textContent = 'Fetched ' + j.fetched + ' clips · placed ' + j.placed + ' of ' + j.total + '.';
+      const notPlaced = (j.results || []).filter(r => r.status !== 'placed');
+      const log = $('gplog');
+      log.style.display = notPlaced.length ? 'block' : 'none';
+      log.textContent = notPlaced.map(r => r.filename + ' — ' + r.status).join('\\n');
+      $('gptoken').value = '';
+      refresh();
+    } catch { $('gpstatus').textContent = 'Request failed.'; }
+    $('gpimport').disabled = false;
   });
 
   let logCursor = 0;
@@ -548,50 +573,14 @@ export async function runServer(port = 4321): Promise<void> {
     return true;
   }
 
-  app.post("/api/place", async (req, res) => {
-    const { id, lat, lng } = req.body as { id: string; lat: number; lng: number };
-    if (typeof lat !== "number" || typeof lng !== "number" || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
-      return res.status(400).json({ error: "invalid coordinates" });
-    }
-    const ok = await commitPlacement(id, lat, lng, "manual");
-    res.status(ok ? 200 : 404).json(ok ? { ok: true } : { error: "not found" });
-  });
-
-  // Place a pending item by recording time: find where the GPX track was at
-  // that instant and pin it there.
-  app.post("/api/place-by-time", async (req, res) => {
-    const { id, t } = req.body as { id: string; t: number };
-    if (typeof t !== "number" || !Number.isFinite(t)) {
-      return res.status(400).json({ error: "invalid time" });
-    }
+  // Match {filename, t(epoch ms)} entries to pending clips, look each up on the
+  // GPX track, and publish all matches in one pass. Shared by the JSON-paste
+  // and GoPro-Cloud import paths.
+  async function bulkPlaceByTime(
+    items: { filename: string; t: number }[],
+  ): Promise<{ placed: number; total: number; results: { filename: string; status: string }[] } | { error: string }> {
     const track = await loadGpxTracks(config.incomingDir);
-    if (!track.length) return res.status(400).json({ error: "No GPX track uploaded." });
-
-    const resolver = new GeoResolver();
-    resolver.addTrack(track);
-    const near = resolver.nearest(t);
-    const WINDOW_MS = 15 * 60 * 1000;
-    if (!near || near.gapMs > WINDOW_MS) {
-      const r = resolver.range();
-      const fmt = (x?: number) => (x ? new Date(x).toISOString().replace(".000Z", "Z") : "?");
-      return res.status(404).json({
-        error: `No GPX point near that time. Track covers ${fmt(r?.start)} – ${fmt(r?.end)} (UTC). Check the date/timezone.`,
-      });
-    }
-    const ok = await commitPlacement(id, near.point.lat, near.point.lng, "gpx");
-    res.status(ok ? 200 : 404).json(ok ? { ok: true } : { error: "not found" });
-  });
-
-  // Bulk-place pending items from a filename→time mapping: match each name to a
-  // pending clip, look up its GPX location, and publish them all in one pass.
-  // Times arrive as epoch ms (the browser converts wall-clock in its timezone).
-  app.post("/api/place-bulk", async (req, res) => {
-    const items = (req.body as { items?: { filename: string; t: number }[] }).items ?? [];
-    if (!Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ error: "no items" });
-    }
-    const track = await loadGpxTracks(config.incomingDir);
-    if (!track.length) return res.status(400).json({ error: "No GPX track uploaded." });
+    if (!track.length) return { error: "No GPX track uploaded." };
 
     const resolver = new GeoResolver();
     resolver.addTrack(track);
@@ -638,7 +627,93 @@ export async function runServer(port = 4321): Promise<void> {
       await state.save();
       await savePending(pending.filter((p) => !placedIds.has(p.id)));
     }
-    res.json({ ok: true, placed: placed.length, total: items.length, results });
+    return { placed: placed.length, total: items.length, results };
+  }
+
+  // Page through the GoPro Cloud media library for filename + recording time.
+  async function fetchGoproMedia(token: string): Promise<{ filename: string; capturedAt: string }[]> {
+    const out: { filename: string; capturedAt: string }[] = [];
+    for (let page = 1; page <= 500; page++) {
+      const url = `https://api.gopro.com/media/search?fields=filename,captured_at,type&per_page=100&page=${page}`;
+      const r = await fetch(url, {
+        headers: {
+          authorization: `Bearer ${token}`,
+          accept: "application/vnd.gopro.jk.media+json; version=2.0.0",
+        },
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const j = (await r.json()) as {
+        _embedded?: { media?: { filename?: string; captured_at?: string }[] };
+        _pages?: { current_page: number; total_pages: number };
+      };
+      for (const m of j._embedded?.media ?? []) {
+        if (m.filename && m.captured_at) out.push({ filename: m.filename, capturedAt: m.captured_at });
+      }
+      if (!j._pages || j._pages.current_page >= j._pages.total_pages) break;
+    }
+    return out;
+  }
+
+  app.post("/api/place", async (req, res) => {
+    const { id, lat, lng } = req.body as { id: string; lat: number; lng: number };
+    if (typeof lat !== "number" || typeof lng !== "number" || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+      return res.status(400).json({ error: "invalid coordinates" });
+    }
+    const ok = await commitPlacement(id, lat, lng, "manual");
+    res.status(ok ? 200 : 404).json(ok ? { ok: true } : { error: "not found" });
+  });
+
+  // Place a pending item by recording time: find where the GPX track was at
+  // that instant and pin it there.
+  app.post("/api/place-by-time", async (req, res) => {
+    const { id, t } = req.body as { id: string; t: number };
+    if (typeof t !== "number" || !Number.isFinite(t)) {
+      return res.status(400).json({ error: "invalid time" });
+    }
+    const track = await loadGpxTracks(config.incomingDir);
+    if (!track.length) return res.status(400).json({ error: "No GPX track uploaded." });
+
+    const resolver = new GeoResolver();
+    resolver.addTrack(track);
+    const near = resolver.nearest(t);
+    const WINDOW_MS = 15 * 60 * 1000;
+    if (!near || near.gapMs > WINDOW_MS) {
+      const r = resolver.range();
+      const fmt = (x?: number) => (x ? new Date(x).toISOString().replace(".000Z", "Z") : "?");
+      return res.status(404).json({
+        error: `No GPX point near that time. Track covers ${fmt(r?.start)} – ${fmt(r?.end)} (UTC). Check the date/timezone.`,
+      });
+    }
+    const ok = await commitPlacement(id, near.point.lat, near.point.lng, "gpx");
+    res.status(ok ? 200 : 404).json(ok ? { ok: true } : { error: "not found" });
+  });
+
+  // Bulk-place pending items from a filename→time mapping (times are epoch ms,
+  // converted by the browser in its timezone).
+  app.post("/api/place-bulk", async (req, res) => {
+    const items = (req.body as { items?: { filename: string; t: number }[] }).items ?? [];
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: "no items" });
+    }
+    const r = await bulkPlaceByTime(items);
+    res.status("error" in r ? 400 : 200).json("error" in r ? r : { ok: true, ...r });
+  });
+
+  // Import recording times straight from GoPro Cloud and place by filename.
+  app.post("/api/gopro-import", async (req, res) => {
+    const token = (req.body as { token?: string }).token?.trim().replace(/^Bearer\s+/i, "");
+    if (!token) return res.status(400).json({ error: "no token" });
+    let media: { filename: string; capturedAt: string }[];
+    try {
+      media = await fetchGoproMedia(token);
+    } catch (err) {
+      return res.status(502).json({ error: `GoPro fetch failed: ${(err as Error).message}` });
+    }
+    const items = media
+      .map((m) => ({ filename: m.filename, t: Date.parse(m.capturedAt) }))
+      .filter((x) => Number.isFinite(x.t));
+    const r = await bulkPlaceByTime(items);
+    res.status("error" in r ? 400 : 200).json("error" in r ? r : { ok: true, fetched: media.length, ...r });
   });
 
   app.post("/api/move", async (req, res) => {
