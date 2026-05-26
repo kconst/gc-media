@@ -71,6 +71,24 @@ export interface Manifest {
   assets: Asset[];
 }
 
+/** One sample of a GPS track published for the map's path overlay. */
+export interface TrackPoint {
+  lat: number;
+  lng: number;
+  /** Epoch milliseconds (UTC). */
+  t: number;
+  /** Heart rate in bpm, if the source carried it. */
+  hr?: number;
+  /** Ground speed in metres per second, derived from consecutive fixes. */
+  speed?: number;
+}
+
+export interface Track {
+  version: 1;
+  generatedAt: string;
+  points: TrackPoint[];
+}
+
 export function emptyLabels(): Labels {
   return { plants: [], animals: [], peopleMorale: [], interesting: [] };
 }

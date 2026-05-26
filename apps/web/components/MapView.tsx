@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { AdvancedMarker, Map, useMap } from "@vis.gl/react-google-maps";
 import { MarkerClusterer } from "@googlemaps/markerclusterer";
-import type { Asset, MapBounds } from "@gc-media/shared";
+import type { Asset, MapBounds, Track } from "@gc-media/shared";
 import { Pin } from "./Pin";
+import { TrackOverlay, type TrackMetric } from "./TrackOverlay";
 
 type MarkerEl = google.maps.marker.AdvancedMarkerElement;
 
@@ -54,10 +55,12 @@ function ClusteredPins({ assets, onSelect }: { assets: Asset[]; onSelect: (a: As
 interface Props {
   assets: Asset[];
   bounds?: MapBounds;
+  track?: Track;
+  trackMetric: TrackMetric;
   onSelect: (a: Asset) => void;
 }
 
-export function MapView({ assets, bounds, onSelect }: Props) {
+export function MapView({ assets, bounds, track, trackMetric, onSelect }: Props) {
   const mapId = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID ?? "DEMO_MAP_ID";
 
   return (
@@ -81,6 +84,7 @@ export function MapView({ assets, bounds, onSelect }: Props) {
       mapTypeControl
       disableDefaultUI={false}
     >
+      {track && <TrackOverlay track={track} metric={trackMetric} />}
       <ClusteredPins assets={assets} onSelect={onSelect} />
     </Map>
   );

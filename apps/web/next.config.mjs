@@ -6,12 +6,19 @@ const MANIFEST_TARGET =
   process.env.MANIFEST_PROXY_TARGET ||
   "https://d3etcbrcz4shm0.cloudfront.net/manifest.json";
 
+const TRACK_TARGET =
+  process.env.TRACK_PROXY_TARGET ||
+  "https://d3etcbrcz4shm0.cloudfront.net/track.json";
+
 const nextConfig = {
   reactStrictMode: true,
   // @gc-media/shared ships TS source; let Next transpile it.
   transpilePackages: ["@gc-media/shared"],
   async rewrites() {
-    return [{ source: "/manifest.json", destination: MANIFEST_TARGET }];
+    return [
+      { source: "/manifest.json", destination: MANIFEST_TARGET },
+      { source: "/track.json", destination: TRACK_TARGET },
+    ];
   },
   webpack: (config) => {
     // Resolve NodeNext-style ".js" relative imports to their ".ts" sources.

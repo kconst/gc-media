@@ -1,5 +1,5 @@
 import path from "node:path";
-import { emptyLabels, type Asset, type Labels } from "@gc-media/shared";
+import { emptyLabels, type Asset, type Labels, type TrackPoint } from "@gc-media/shared";
 import { config } from "./config.js";
 import { State } from "./state.js";
 import { GeoResolver } from "./geo/resolver.js";
@@ -11,7 +11,7 @@ import { readVideoCapturedAt } from "./meta/videoTime.js";
 import { makeDerivatives, sampleFrames } from "./media/derivatives.js";
 import { uploadFile } from "./media/s3.js";
 import { analyzeImages } from "./ai/claude.js";
-import { loadManifest, saveAndPublish, upsertAssets } from "./manifest.js";
+import { loadManifest, saveAndPublish, saveAndPublishTrack, upsertAssets } from "./manifest.js";
 import { addPending, type PendingAsset } from "./pending.js";
 import { ingestLocalFolder } from "./sources/localFolder.js";
 import { ingestGooglePhotos } from "./sources/googlePhotos.js";
@@ -71,14 +71,23 @@ export async function runPipeline(opts: RunOptions): Promise<void> {
   // Fold in any GPX tracks (e.g. Garmin) found alongside the media, so videos
   // whose own files carry no GPS can be placed by timestamp.
   const gpxDirs = [...new Set([opts.dir, config.incomingDir].filter(Boolean) as string[])];
+  const gpxPoints: TrackPoint[] = [];
   for (const d of gpxDirs) {
     const gpx = await loadGpxTracks(d);
     if (gpx.length) {
       resolver.addTrack(gpx);
+      gpxPoints.push(...gpx);
       log(`Loaded ${gpx.length} GPX track points from ${d}.`);
     }
   }
   log(`GPS timeline: ${resolver.trackSize} samples.`);
+
+  // Publish the path so the map can overlay it (only when we actually found a
+  // track, so a media-only run never wipes an existing overlay).
+  if (gpxPoints.length) {
+    gpxPoints.sort((a, b) => a.t - b.t);
+    await saveAndPublishTrack(gpxPoints);
+  }
 
   const newAssets: Asset[] = [];
 

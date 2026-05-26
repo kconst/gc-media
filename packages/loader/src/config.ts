@@ -42,6 +42,7 @@ export const config = {
   manifest: {
     store: (process.env.MANIFEST_STORE ?? "s3") as "s3" | "local",
     key: process.env.MANIFEST_KEY ?? "manifest.json",
+    trackKey: process.env.TRACK_KEY ?? "track.json",
   },
 };
 

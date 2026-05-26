@@ -1,9 +1,12 @@
 import fs from "node:fs/promises";
+import path from "node:path";
 import {
   computeBounds,
   emptyManifest,
   type Asset,
   type Manifest,
+  type Track,
+  type TrackPoint,
 } from "@gc-media/shared";
 import { config } from "./config.js";
 import { uploadBuffer } from "./media/s3.js";
@@ -57,5 +60,36 @@ export async function saveAndPublish(manifest: Manifest): Promise<void> {
       "no-cache",
     );
     console.log(`Published manifest → ${url}`);
+  }
+}
+
+/** Evenly thin a track to at most `max` points, keeping the first and last. */
+function downsample(points: TrackPoint[], max: number): TrackPoint[] {
+  if (points.length <= max) return points;
+  const step = (points.length - 1) / (max - 1);
+  const out: TrackPoint[] = [];
+  for (let i = 0; i < max; i++) out.push(points[Math.round(i * step)]!);
+  return out;
+}
+
+/** Write the GPS track locally and publish it where the map reads it. */
+export async function saveAndPublishTrack(points: TrackPoint[]): Promise<void> {
+  const track: Track = {
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    points: downsample(points, 2000),
+  };
+  await fs.mkdir(config.dataDir, { recursive: true });
+  const json = JSON.stringify(track);
+  await fs.writeFile(path.join(config.dataDir, "track.json"), json);
+
+  if (config.manifest.store === "s3") {
+    const url = await uploadBuffer(
+      config.manifest.trackKey,
+      json,
+      "application/json",
+      "no-cache",
+    );
+    console.log(`Published track (${track.points.length} pts) → ${url}`);
   }
 }
