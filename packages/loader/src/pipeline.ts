@@ -44,6 +44,7 @@ async function gather(opts: RunOptions): Promise<IngestItem[]> {
 export async function runPipeline(opts: RunOptions): Promise<void> {
   const log = opts.log ?? ((m: string) => console.log(m));
   const state = await State.load();
+  log("Scanning source for media…");
   const all = await gather(opts);
   const items = all.filter((it) => opts.force || !state.has(it.id));
   log(`Discovered ${all.length} assets, ${items.length} new to process.`);
@@ -51,7 +52,10 @@ export async function runPipeline(opts: RunOptions): Promise<void> {
   // Pass 1: build the GoPro GPS timeline + remember each clip's own position.
   const resolver = new GeoResolver();
   const ownGps = new Map<string, GpsSample[]>();
-  for (const it of items.filter((i) => i.type === "video")) {
+  const videos = items.filter((i) => i.type === "video");
+  if (videos.length) log(`Scanning ${videos.length} video(s) for a GPS track…`);
+  for (const it of videos) {
+    log(`  reading GPS from ${it.originalFilename}…`);
     const track = await extractGoproTrack(it.localPath);
     if (track.length) {
       resolver.addTrack(track);

@@ -204,20 +204,34 @@ const page = (mapsKey: string, mapId: string, incomingDir: string) => /* html */
     inp.value = ''; $('uploadzip').disabled = false;
   });
 
-  $('run').addEventListener('click', () => {
-    const params = new URLSearchParams({
-      source: $('source').value,
-      dir: $('dir').value,
-      credit: $('credit').value,
-      noAi: $('noai').checked ? '1' : '',
-      force: $('force').checked ? '1' : '',
-    });
-    const log = $('log'); log.textContent = '';
-    $('run').disabled = true;
-    const es = new EventSource('/api/run?' + params.toString());
-    es.onmessage = (e) => { log.textContent += e.data + '\\n'; log.scrollTop = log.scrollHeight; };
-    es.addEventListener('done', () => { es.close(); $('run').disabled = false; refresh(); });
-    es.onerror = () => { es.close(); $('run').disabled = false; };
+  let logCursor = 0;
+  function appendLog(line) {
+    const log = $('log');
+    log.textContent += line + '\\n';
+    log.scrollTop = log.scrollHeight;
+  }
+  async function pollLog() {
+    let r;
+    try { r = await fetch('/api/run/log?from=' + logCursor).then(r => r.json()); }
+    catch { setTimeout(pollLog, 1500); return; }
+    for (const l of r.lines) appendLog(l);
+    logCursor = r.total;
+    if (r.active) { $('run').disabled = true; setTimeout(pollLog, 1200); }
+    else { $('run').disabled = false; refresh(); }
+  }
+
+  $('run').addEventListener('click', async () => {
+    $('log').textContent = ''; logCursor = 0; $('run').disabled = true;
+    try {
+      await fetch('/api/run', {
+        method:'POST', headers:{'content-type':'application/json'},
+        body: JSON.stringify({
+          source: $('source').value, dir: $('dir').value, credit: $('credit').value,
+          noAi: $('noai').checked, force: $('force').checked,
+        }),
+      });
+    } catch { appendLog('Could not start run.'); $('run').disabled = false; return; }
+    pollLog();
   });
 
   function initMap() {
@@ -242,6 +256,7 @@ const page = (mapsKey: string, mapId: string, incomingDir: string) => /* html */
   }
   window.initMap = initMap;
   refresh();
+  pollLog(); // resume an in-progress run's log after a refresh
 </script>
 <script async src="https://maps.googleapis.com/maps/api/js?key=${mapsKey}&callback=initMap&libraries=maps"></script>
 </body></html>`;
@@ -308,43 +323,55 @@ export async function runServer(port = 4321): Promise<void> {
   app.get("/api/pending", async (_req, res) => res.json(await loadPending()));
   app.get("/api/manifest", async (_req, res) => res.json(await loadManifest()));
 
-  let running = false;
-  app.get("/api/run", async (req, res) => {
-    res.writeHead(200, {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-    });
-    const send = (line: string) => res.write(`data: ${line.replace(/\n/g, " ")}\n\n`);
-    const done = (status: string) => {
-      res.write(`event: done\ndata: ${status}\n\n`);
-      res.end();
+  // Run state is buffered server-side and polled by the client, so progress
+  // survives page refreshes and an in-progress run is visible from any load.
+  let runActive = false;
+  let runLog: string[] = [];
+  const pushLog = (line: string) => {
+    runLog.push(line);
+    if (runLog.length > 5000) runLog.shift();
+  };
+
+  app.post("/api/run", (req, res) => {
+    if (runActive) return res.json({ ok: false, active: true });
+    const body = req.body as {
+      source?: RunOptions["source"];
+      dir?: string;
+      credit?: string;
+      noAi?: boolean;
+      force?: boolean;
     };
+    const source = body.source ?? "local";
 
-    if (running) return done("A run is already in progress.");
-    const source = (req.query.source as RunOptions["source"]) ?? "local";
-    if ((source === "local" || source === "all") && !req.query.dir) {
-      send("No folder path provided.");
-      return done("error");
+    runActive = true;
+    runLog = [];
+    if ((source === "local" || source === "all") && !body.dir) {
+      pushLog("No folder path provided.");
+      runActive = false;
+      return res.json({ ok: false, error: "no dir" });
     }
+    pushLog(`Starting ${source} ingestion${body.dir ? ` from ${body.dir}` : ""}…`);
 
-    running = true;
-    try {
-      await runPipeline({
-        source,
-        dir: req.query.dir ? String(req.query.dir) : undefined,
-        credit: req.query.credit ? String(req.query.credit) : undefined,
-        force: req.query.force === "1",
-        noAi: req.query.noAi === "1",
-        log: send,
+    runPipeline({
+      source,
+      dir: body.dir || undefined,
+      credit: body.credit || undefined,
+      force: !!body.force,
+      noAi: !!body.noAi,
+      log: pushLog,
+    })
+      .then(() => pushLog("Done."))
+      .catch((err) => pushLog(`ERROR: ${(err as Error).message}`))
+      .finally(() => {
+        runActive = false;
       });
-      done("ok");
-    } catch (err) {
-      send(`ERROR: ${(err as Error).message}`);
-      done("error");
-    } finally {
-      running = false;
-    }
+
+    res.json({ ok: true });
+  });
+
+  app.get("/api/run/log", (req, res) => {
+    const from = Math.max(0, Number(req.query.from) || 0);
+    res.json({ from, lines: runLog.slice(from), total: runLog.length, active: runActive });
   });
 
   app.post("/api/place", async (req, res) => {
