@@ -11,6 +11,7 @@ import { runPipeline, type RunOptions } from "../pipeline.js";
 import { loadPending, savePending } from "../pending.js";
 import { loadManifest, removeAsset, saveAndPublish, upsertAssets } from "../manifest.js";
 import { State } from "../state.js";
+import { listGpxFiles } from "../meta/gpx.js";
 
 function timingSafeEqual(a: string, b: string): boolean {
   const ab = Buffer.from(a);
@@ -96,6 +97,10 @@ const page = (mapsKey: string, mapId: string, incomingDir: string) => /* html */
       <p class="empty" style="margin:6px 0 0">Add a Garmin .gpx track to place GPS-less videos by timestamp.</p>
     </section>
     <section>
+      <h2>GPS tracks (<span id="tcount">0</span>)</h2>
+      <div id="tracks"><div class="empty">No tracks uploaded.</div></div>
+    </section>
+    <section>
       <h2>Upload Google Takeout (.zip)</h2>
       <input id="zip" type="file" accept=".zip,application/zip"/>
       <div class="row"><button id="uploadzip" class="secondary">Upload &amp; extract</button> <span id="zstatus" class="empty"></span></div>
@@ -139,12 +144,43 @@ const page = (mapsKey: string, mapId: string, incomingDir: string) => /* html */
   const $ = (id) => document.getElementById(id);
 
   async function refresh() {
-    const [pending, manifest] = await Promise.all([
+    const [pending, manifest, tracks] = await Promise.all([
       fetch('/api/pending').then(r => r.json()),
       fetch('/api/manifest').then(r => r.json()),
+      fetch('/api/tracks').then(r => r.json()),
     ]);
     renderPending(pending);
     renderPins(manifest.assets || []);
+    renderTracks(tracks || []);
+  }
+
+  function fmtSpan(start, end) {
+    if (!start) return '';
+    const d = new Date(start);
+    const day = d.toLocaleDateString([], { month:'short', day:'numeric' });
+    const t0 = d.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+    const t1 = end ? new Date(end).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }) : '';
+    return day + ' ' + t0 + (t1 ? '–' + t1 : '');
+  }
+
+  function renderTracks(tracks) {
+    $('tcount').textContent = tracks.length;
+    const box = $('tracks');
+    if (!tracks.length) { box.innerHTML = '<div class="empty">No tracks uploaded.</div>'; return; }
+    box.innerHTML = '';
+    for (const t of tracks) {
+      const el = document.createElement('div');
+      el.className = 'pin';
+      el.innerHTML = '<div class="meta"><b>'+t.name+'</b><br/>'+
+        '<span class="src">'+t.points+' pts · '+fmtSpan(t.start, t.end)+(t.hasHr ? ' · HR' : '')+'</span><br/>'+
+        '<button class="remove">Remove</button></div>';
+      el.querySelector('.remove').addEventListener('click', async () => {
+        if (!confirm('Remove track "'+t.name+'"? It will no longer place videos.')) return;
+        await fetch('/api/tracks/remove', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ path: t.path }) });
+        refresh();
+      });
+      box.appendChild(el);
+    }
   }
 
   function renderPending(items) {
@@ -208,6 +244,7 @@ const page = (mapsKey: string, mapId: string, incomingDir: string) => /* html */
       const r = await fetch('/api/upload', { method:'POST', body: fd }).then(r => r.json());
       $('ustatus').textContent = 'Uploaded ' + r.count + ' file(s).';
       $('dir').value = r.dir; inp.value = '';
+      refresh(); // surface any newly uploaded .gpx in the tracks list
     } catch { $('ustatus').textContent = 'Upload failed.'; }
     $('upload').disabled = false;
   });
@@ -352,6 +389,19 @@ export async function runServer(port = 4321): Promise<void> {
   });
   app.get("/api/pending", async (_req, res) => res.json(await loadPending()));
   app.get("/api/manifest", async (_req, res) => res.json(await loadManifest()));
+  app.get("/api/tracks", async (_req, res) => res.json(await listGpxFiles(config.incomingDir)));
+
+  app.post("/api/tracks/remove", async (req, res) => {
+    const rel = String((req.body as { path?: string }).path ?? "");
+    const base = path.resolve(config.incomingDir);
+    const full = path.resolve(base, rel);
+    // Confine deletes to .gpx files inside the incoming dir (no path traversal).
+    if ((full !== base && !full.startsWith(base + path.sep)) || !full.toLowerCase().endsWith(".gpx")) {
+      return res.status(400).json({ error: "invalid path" });
+    }
+    await fs.unlink(full).catch(() => {});
+    res.json({ ok: true });
+  });
 
   // Run state is buffered server-side and polled by the client, so progress
   // survives page refreshes and an in-progress run is visible from any load.

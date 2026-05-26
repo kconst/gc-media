@@ -71,6 +71,37 @@ async function* walk(dir: string): AsyncGenerator<string> {
   }
 }
 
+export interface GpxFileInfo {
+  /** Path relative to the scanned dir (used as the delete key). */
+  path: string;
+  name: string;
+  points: number;
+  start?: number;
+  end?: number;
+  hasHr: boolean;
+}
+
+/** Enumerate .gpx files under `dir` with a quick summary of each. */
+export async function listGpxFiles(dir: string): Promise<GpxFileInfo[]> {
+  const out: GpxFileInfo[] = [];
+  for await (const file of walk(dir)) {
+    try {
+      const pts = parseGpx(await fs.readFile(file, "utf8"));
+      out.push({
+        path: path.relative(dir, file),
+        name: path.basename(file),
+        points: pts.length,
+        start: pts[0]?.t,
+        end: pts[pts.length - 1]?.t,
+        hasHr: pts.some((p) => p.hr !== undefined),
+      });
+    } catch {
+      // Skip unreadable/invalid GPX.
+    }
+  }
+  return out.sort((a, b) => (a.start ?? 0) - (b.start ?? 0));
+}
+
 /** Load every .gpx track under `dir` (recursively), merged and time-sorted. */
 export async function loadGpxTracks(dir: string): Promise<TrackPoint[]> {
   const points: TrackPoint[] = [];
