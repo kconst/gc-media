@@ -78,7 +78,10 @@ const page = (mapsKey: string, mapId: string, incomingDir: string) => /* html */
   .item img, .pin img { width:64px; height:64px; object-fit:cover; border-radius:4px; flex:0 0 auto; }
   .meta { font-size:12px; overflow:hidden; }
   .meta .src { color:#5a6473; }
-  .pin button { background:#cf222e; padding:4px 8px; font-size:12px; margin-top:4px; }
+  .geo { display:flex; gap:6px; margin-top:6px; }
+  .geo input { flex:1; min-width:0; padding:4px 6px; border:1px solid var(--b); border-radius:6px; font:inherit; font-size:12px; }
+  .geo button { padding:4px 8px; font-size:12px; }
+  .pin button.remove { background:#cf222e; padding:4px 8px; font-size:12px; margin-top:4px; }
   .empty { color:#8a93a0; font-size:13px; }
   footer { padding:6px 16px; background:#f4f5f7; border-top:1px solid var(--b); font-size:12px; color:#5a6473; }
 </style></head>
@@ -152,8 +155,18 @@ const page = (mapsKey: string, mapId: string, incomingDir: string) => /* html */
     for (const it of items) {
       const el = document.createElement('div');
       el.className = 'item'; el.draggable = true; el.dataset.id = it.id;
-      el.innerHTML = '<img src="'+it.thumbnailUrl+'"/><div class="meta"><b>'+(it.type)+'</b><br/>'+(it.description||'').slice(0,90)+'</div>';
+      el.innerHTML = '<img src="'+it.thumbnailUrl+'"/><div class="meta"><b>'+(it.type)+'</b><br/>'+(it.description||'').slice(0,90)+
+        '<div class="geo"><input class="ll" placeholder="lat, lng"/><button class="secondary place">Place</button></div></div>';
       el.addEventListener('dragstart', () => dragId = it.id);
+      const inp = el.querySelector('.ll');
+      inp.draggable = false;
+      inp.addEventListener('mousedown', (e) => e.stopPropagation()); // type without starting a drag
+      el.querySelector('.place').addEventListener('click', async () => {
+        const ll = parseLatLng(inp.value);
+        if (!ll) { alert('Enter coordinates as "lat, lng", e.g. 36.0501, -112.1201'); return; }
+        await fetch('/api/place', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ id: it.id, lat: ll.lat, lng: ll.lng }) });
+        refresh();
+      });
       box.appendChild(el);
     }
   }
@@ -167,9 +180,16 @@ const page = (mapsKey: string, mapId: string, incomingDir: string) => /* html */
       const el = document.createElement('div');
       el.className = 'pin';
       el.innerHTML = '<img src="'+a.thumbnailUrl+'"/><div class="meta">'+
-        (a.description||'').slice(0,80)+'<br/><span class="src">'+a.lat.toFixed(4)+', '+a.lng.toFixed(4)+' · '+a.geoSource+'</span><br/>'+
-        '<button data-id="'+a.id+'">Remove</button></div>';
-      el.querySelector('button').addEventListener('click', async (e) => {
+        (a.description||'').slice(0,80)+'<br/><span class="src">'+a.lat.toFixed(4)+', '+a.lng.toFixed(4)+' · '+a.geoSource+'</span>'+
+        '<div class="geo"><input class="ll" value="'+a.lat.toFixed(6)+', '+a.lng.toFixed(6)+'"/><button class="secondary move">Move</button></div>'+
+        '<button class="remove" data-id="'+a.id+'">Remove</button></div>';
+      el.querySelector('.move').addEventListener('click', async () => {
+        const ll = parseLatLng(el.querySelector('.ll').value);
+        if (!ll) { alert('Enter coordinates as "lat, lng", e.g. 36.0501, -112.1201'); return; }
+        await fetch('/api/move', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ id: a.id, lat: ll.lat, lng: ll.lng }) });
+        refresh();
+      });
+      el.querySelector('.remove').addEventListener('click', async (e) => {
         if (!confirm('Remove this pin from the map?')) return;
         await fetch('/api/remove', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ id: e.target.dataset.id }) });
         refresh();
@@ -250,6 +270,13 @@ const page = (mapsKey: string, mapId: string, incomingDir: string) => /* html */
       dragId = null;
       refresh();
     });
+  }
+  function parseLatLng(s) {
+    const m = String(s).trim().match(/^(-?\\d+(?:\\.\\d+)?)\\s*[, ]\\s*(-?\\d+(?:\\.\\d+)?)$/);
+    if (!m) return null;
+    const lat = parseFloat(m[1]), lng = parseFloat(m[2]);
+    if (!isFinite(lat) || !isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+    return { lat, lng };
   }
   function pointToLatLng(x, y) {
     const ne = map.getBounds().getNorthEast(), sw = map.getBounds().getSouthWest();
@@ -381,6 +408,9 @@ export async function runServer(port = 4321): Promise<void> {
 
   app.post("/api/place", async (req, res) => {
     const { id, lat, lng } = req.body as { id: string; lat: number; lng: number };
+    if (typeof lat !== "number" || typeof lng !== "number" || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+      return res.status(400).json({ error: "invalid coordinates" });
+    }
     const pending = await loadPending();
     const item = pending.find((p) => p.id === id);
     if (!item) return res.status(404).json({ error: "not found" });
@@ -394,6 +424,20 @@ export async function runServer(port = 4321): Promise<void> {
     await state.save();
 
     await savePending(pending.filter((p) => p.id !== id));
+    res.json({ ok: true });
+  });
+
+  app.post("/api/move", async (req, res) => {
+    const { id, lat, lng } = req.body as { id: string; lat: number; lng: number };
+    if (typeof lat !== "number" || typeof lng !== "number" || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+      return res.status(400).json({ error: "invalid coordinates" });
+    }
+    const manifest = await loadManifest();
+    const existing = manifest.assets.find((a) => a.id === id);
+    if (!existing) return res.status(404).json({ error: "not found" });
+
+    const asset: Asset = { ...existing, lat, lng, geoSource: "manual" };
+    await saveAndPublish(upsertAssets(manifest, [asset]));
     res.json({ ok: true });
   });
 
