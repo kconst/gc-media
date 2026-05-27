@@ -69,7 +69,13 @@ export async function downloadGoproMedia(
 
   const r = await fetch(url);
   if (!r.ok || !r.body) throw new Error(`source HTTP ${r.status}`);
-  await streamPipeline(Readable.fromWeb(r.body as Parameters<typeof Readable.fromWeb>[0]), createWriteStream(dest));
+  try {
+    await streamPipeline(Readable.fromWeb(r.body as Parameters<typeof Readable.fromWeb>[0]), createWriteStream(dest));
+  } catch (e) {
+    // Don't leave a partial file hogging disk if the download is interrupted.
+    await fs.rm(dest, { force: true }).catch(() => {});
+    throw e;
+  }
 
   const id = await hashFile(dest);
   const type: AssetType = m.type === "Photo" ? "photo" : "video";

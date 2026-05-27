@@ -606,8 +606,12 @@ export async function runServer(port = 4321): Promise<void> {
           }
         }
         if (items.length) {
-          await runPipelineOnItems(items, { source: "local", noAi: !!body.noAi, log: pushLog });
-          for (const it of items) await fs.unlink(it.localPath).catch(() => {});
+          try {
+            await runPipelineOnItems(items, { source: "local", noAi: !!body.noAi, log: pushLog });
+          } finally {
+            // Always reclaim the downloaded originals, even if processing threw.
+            for (const it of items) await fs.unlink(it.localPath).catch(() => {});
+          }
         }
         pushLog(`Progress: ${Math.min(i + BATCH, media.length)}/${media.length}`);
       }
