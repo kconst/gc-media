@@ -9,6 +9,11 @@ import { hashFile } from "../util/hash.js";
 
 const ACCEPT = "application/vnd.gopro.jk.media+json; version=2.0.0";
 
+// Skip downloading clips whose original exceeds this (multi-hour "concat"
+// recordings): they're 20-40GB, take ~hours to transcode, and their web video
+// would blow past S3's 5GB single-upload limit. Override via env.
+const MAX_DOWNLOAD_BYTES = (Number(process.env.GOPRO_MAX_DOWNLOAD_GB) || 12) * 1024 ** 3;
+
 export interface GoproMedia {
   id: string;
   filename: string;
@@ -69,6 +74,11 @@ export async function downloadGoproMedia(
 
   const r = await fetch(url);
   if (!r.ok || !r.body) throw new Error(`source HTTP ${r.status}`);
+  const len = Number(r.headers.get("content-length") || 0);
+  if (len > MAX_DOWNLOAD_BYTES) {
+    await r.body.cancel().catch(() => {});
+    throw new Error(`too large (${(len / 1024 ** 3).toFixed(1)}GB) — skipped`);
+  }
   try {
     await streamPipeline(Readable.fromWeb(r.body as Parameters<typeof Readable.fromWeb>[0]), createWriteStream(dest));
   } catch (e) {
