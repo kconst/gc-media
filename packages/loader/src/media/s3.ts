@@ -1,5 +1,12 @@
 import fs from "node:fs";
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import {
+  S3Client,
+  PutObjectCommand,
+  CreateMultipartUploadCommand,
+  UploadPartCommand,
+  CompleteMultipartUploadCommand,
+  AbortMultipartUploadCommand,
+} from "@aws-sdk/client-s3";
 import { config } from "../config.js";
 
 let client: S3Client | undefined;
@@ -24,19 +31,78 @@ export function cloudfrontUrl(key: string): string {
   return `https://${config.aws.cloudfrontDomain()}/${key}`;
 }
 
+// S3 PutObject caps at 5GB; larger derivatives (long-clip web.mp4s) must use
+// multipart upload.
+const MULTIPART_THRESHOLD = 4.5 * 1024 ** 3;
+const PART_SIZE = 100 * 1024 * 1024;
+
 export async function uploadFile(
   key: string,
   localPath: string,
   contentType: string,
 ): Promise<string> {
-  await s3().send(
-    new PutObjectCommand({
-      Bucket: config.aws.bucket(),
-      Key: key,
-      Body: fs.createReadStream(localPath),
-      ContentType: contentType,
-    }),
+  const size = fs.statSync(localPath).size;
+  if (size < MULTIPART_THRESHOLD) {
+    await s3().send(
+      new PutObjectCommand({
+        Bucket: config.aws.bucket(),
+        Key: key,
+        Body: fs.createReadStream(localPath),
+        ContentType: contentType,
+      }),
+    );
+    return cloudfrontUrl(key);
+  }
+  return uploadMultipart(key, localPath, contentType, size);
+}
+
+async function uploadMultipart(
+  key: string,
+  localPath: string,
+  contentType: string,
+  size: number,
+): Promise<string> {
+  const Bucket = config.aws.bucket();
+  const created = await s3().send(
+    new CreateMultipartUploadCommand({ Bucket, Key: key, ContentType: contentType }),
   );
+  const UploadId = created.UploadId;
+  const parts: { ETag: string | undefined; PartNumber: number }[] = [];
+  const fd = await fs.promises.open(localPath, "r");
+  try {
+    const buf = Buffer.allocUnsafe(PART_SIZE);
+    let pos = 0;
+    let partNumber = 1;
+    while (pos < size) {
+      const { bytesRead } = await fd.read(buf, 0, PART_SIZE, pos);
+      if (bytesRead <= 0) break;
+      const out = await s3().send(
+        new UploadPartCommand({
+          Bucket,
+          Key: key,
+          UploadId,
+          PartNumber: partNumber,
+          Body: buf.subarray(0, bytesRead),
+        }),
+      );
+      parts.push({ ETag: out.ETag, PartNumber: partNumber });
+      pos += bytesRead;
+      partNumber++;
+    }
+    await s3().send(
+      new CompleteMultipartUploadCommand({
+        Bucket,
+        Key: key,
+        UploadId,
+        MultipartUpload: { Parts: parts },
+      }),
+    );
+  } catch (err) {
+    await s3().send(new AbortMultipartUploadCommand({ Bucket, Key: key, UploadId })).catch(() => {});
+    throw err;
+  } finally {
+    await fd.close();
+  }
   return cloudfrontUrl(key);
 }
 
