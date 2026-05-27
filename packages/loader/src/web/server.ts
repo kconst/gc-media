@@ -9,6 +9,7 @@ import type { Asset } from "@gc-media/shared";
 import { config } from "../config.js";
 import { runPipeline, runPipelineOnItems, type RunOptions } from "../pipeline.js";
 import { listGoproMedia, downloadGoproMedia } from "../sources/gopro.js";
+import { icloudToken, listIcloudAssets, icloudItems, icloudUrls, downloadIcloudItem } from "../sources/icloud.js";
 import { loadPending, savePending } from "../pending.js";
 import { loadManifest, removeAsset, saveAndPublish, upsertAssets } from "../manifest.js";
 import { State } from "../state.js";
@@ -140,6 +141,14 @@ const page = (mapsKey: string, mapId: string, incomingDir: string) => /* html */
       </div>
       <p class="empty" style="margin:6px 0 0"><b>Download &amp; ingest</b>: pull every clip from GoPro Cloud, transcode, and place by time (progress shows in the ingestion log). <b>Import times only</b>: place clips you already uploaded.</p>
       <pre id="gplog" style="display:none"></pre>
+    </section>
+    <section>
+      <h2>Import iCloud Shared Album</h2>
+      <p class="empty" style="margin:0 0 6px">Paste the public album link. Only items within the GPX time window are imported; each is placed by time-match on the track (like GoPro).</p>
+      <input id="icurl" type="text" placeholder="https://www.icloud.com/sharedalbum/#…"/>
+      <label>Time offset (minutes) — normalize album time to the track</label>
+      <input id="icoffset" type="number" value="0" step="1"/>
+      <div class="row"><button id="icimport" class="secondary">Import album</button> <span id="icstatus" class="empty"></span></div>
     </section>
     <section>
       <h2>Bulk place by timestamps</h2>
@@ -374,6 +383,19 @@ const page = (mapsKey: string, mapId: string, incomingDir: string) => /* html */
       refresh();
     } catch { $('gpstatus').textContent = 'Request failed.'; }
     $('gpimport').disabled = false;
+  });
+
+  $('icimport').addEventListener('click', async () => {
+    const url = $('icurl').value.trim();
+    if (!url) { $('icstatus').textContent = 'Paste the album link first.'; return; }
+    if (!confirm('Import iCloud album items within the GPX window?')) return;
+    $('icstatus').textContent = 'Started — watch the ingestion log below.';
+    try {
+      const j = await fetch('/api/icloud-ingest', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ url, timeOffsetMinutes: Number($('icoffset').value)||0, noAi: $('noai').checked }) }).then(r => r.json());
+      if (j.active) { $('icstatus').textContent = 'A run is already in progress.'; return; }
+      if (!j.ok) { $('icstatus').textContent = j.error || 'Failed to start.'; return; }
+      pollLog();
+    } catch { $('icstatus').textContent = 'Request failed.'; }
   });
 
   let logCursor = 0;
@@ -618,6 +640,78 @@ export async function runServer(port = 4321): Promise<void> {
         pushLog(`Progress: ${Math.min(i + BATCH, media.length)}/${media.length}`);
       }
       pushLog("GoPro ingest complete.");
+    })()
+      .catch((e) => pushLog(`ERROR: ${(e as Error).message}`))
+      .finally(() => {
+        runActive = false;
+      });
+
+    res.json({ ok: true });
+  });
+
+  // One-time import of an iCloud shared album, placed by GPX time-match (same
+  // as GoPro). Filters to the GPX time window so only on-trip media is pulled.
+  app.post("/api/icloud-ingest", (req, res) => {
+    if (runActive) return res.json({ ok: false, active: true });
+    const body = req.body as { url?: string; timeOffsetMinutes?: number; allItems?: boolean; noAi?: boolean };
+    const token = body.url ? icloudToken(body.url) : "";
+    if (!token) return res.status(400).json({ error: "no album url" });
+    const offMs = (Number(body.timeOffsetMinutes) || 0) * 60_000;
+
+    runActive = true;
+    runLog = [];
+    pushLog("Reading iCloud shared album…");
+
+    (async () => {
+      const { host, photos } = await listIcloudAssets(token);
+      let items = icloudItems(photos);
+      pushLog(`Album has ${items.length} datable items.`);
+
+      const track = await loadGpxTracks(config.incomingDir);
+      if (!body.allItems && track.length) {
+        const ts = track.map((p) => p.t);
+        const start = Math.min(...ts);
+        const end = Math.max(...ts);
+        const before = items.length;
+        items = items.filter((i) => i.capturedAt + offMs >= start && i.capturedAt + offMs <= end);
+        pushLog(`Within GPX window (offset ${body.timeOffsetMinutes || 0}m): ${items.length} of ${before}.`);
+      } else if (!body.allItems) {
+        pushLog("No GPX track found — importing all items.");
+      }
+
+      const urls = await icloudUrls(host, token, items);
+      const BATCH = 6;
+      for (let i = 0; i < items.length; i += BATCH) {
+        const batch = items.slice(i, i + BATCH);
+        const ing = [];
+        for (const it of batch) {
+          const url = urls.get(it.checksum);
+          if (!url) {
+            pushLog(`  no URL for ${it.guid.slice(0, 8)}`);
+            continue;
+          }
+          try {
+            pushLog(`Downloading ${it.type} ${it.guid.slice(0, 8)}…`);
+            ing.push(await downloadIcloudItem(url, it, config.incomingDir));
+          } catch (e) {
+            pushLog(`  FAILED ${it.guid.slice(0, 8)}: ${(e as Error).message}`);
+          }
+        }
+        if (ing.length) {
+          try {
+            await runPipelineOnItems(ing, {
+              source: "local",
+              noAi: !!body.noAi,
+              timeOffsetMinutes: body.timeOffsetMinutes || 0,
+              log: pushLog,
+            });
+          } finally {
+            for (const x of ing) await fs.unlink(x.localPath).catch(() => {});
+          }
+        }
+        pushLog(`Progress: ${Math.min(i + BATCH, items.length)}/${items.length}`);
+      }
+      pushLog("iCloud import complete.");
     })()
       .catch((e) => pushLog(`ERROR: ${(e as Error).message}`))
       .finally(() => {
