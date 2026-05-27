@@ -1,0 +1,189 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1320" height="900" viewBox="0 0 1320 900" font-family="-apple-system, Segoe UI, Roboto, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#555"/>
+    </marker>
+    <style>
+      .lane { fill:#f4f6f8; stroke:#c7cdd4; stroke-width:1.5; rx:12; }
+      .lane-title { font-size:14px; font-weight:700; fill:#39424e; letter-spacing:.03em; }
+      .box { fill:#ffffff; stroke:#9aa4b0; stroke-width:1.3; rx:8; }
+      .box-h { font-size:12.5px; font-weight:700; fill:#1c2733; }
+      .t { font-size:10.5px; fill:#48535f; }
+      .new { fill:#eaf5ff; stroke:#2b8ae0; }
+      .ext { fill:#fff6e6; stroke:#e0a32b; }
+      .user { fill:#ecfae9; stroke:#4caf50; }
+      .edge { stroke:#666; stroke-width:1.4; fill:none; marker-end:url(#arrow); }
+      .edge-lbl { font-size:9.5px; fill:#6b7785; }
+      .pill { font-size:9px; font-weight:700; fill:#2b8ae0; }
+    </style>
+  </defs>
+
+  <text x="660" y="34" text-anchor="middle" font-size="20" font-weight="700" fill="#1c2733">Grand Canyon Trip Map — System Components</text>
+  <text x="660" y="54" text-anchor="middle" font-size="11.5" fill="#6b7785">Blue = built/changed this session · Orange = external service · Green = people</text>
+
+  <!-- ===================== LANE 1: SOURCES ===================== -->
+  <rect class="lane" x="24" y="74" width="250" height="540"/>
+  <text class="lane-title" x="40" y="98">CAPTURE SOURCES</text>
+
+  <rect class="box new" x="40" y="112" width="218" height="74" rx="8"/>
+  <text class="box-h" x="52" y="132">GoPro Cloud  <tspan class="pill">NEW</tspan></text>
+  <text class="t" x="52" y="150">api.gopro.com (unofficial)</text>
+  <text class="t" x="52" y="165">list media · download originals</text>
+  <text class="t" x="52" y="180">filename + captured_at (true UTC)</text>
+
+  <rect class="box new" x="40" y="198" width="218" height="58" rx="8"/>
+  <text class="box-h" x="52" y="218">Garmin GPX  <tspan class="pill">NEW</tspan></text>
+  <text class="t" x="52" y="236">track points: lat/lng/time,</text>
+  <text class="t" x="52" y="250">heart rate, derived speed</text>
+
+  <rect class="box" x="40" y="268" width="218" height="72" rx="8"/>
+  <text class="box-h" x="52" y="288">Phone / device uploads</text>
+  <text class="t" x="52" y="306">photos &amp; clips (EXIF GPS)</text>
+  <text class="t" x="52" y="321">Google Photos · Google</text>
+  <text class="t" x="52" y="336">Takeout (.zip + JSON sidecars)</text>
+
+  <rect class="box ext" x="40" y="430" width="218" height="58" rx="8"/>
+  <text class="box-h" x="52" y="450">Anthropic Claude API</text>
+  <text class="t" x="52" y="468">AI description + labels</text>
+  <text class="t" x="52" y="482">(best-effort, optional)</text>
+
+  <rect class="box ext" x="40" y="500" width="218" height="50" rx="8"/>
+  <text class="box-h" x="52" y="520">Google Maps API</text>
+  <text class="t" x="52" y="538">tiles · markers · clustering</text>
+
+  <rect class="box user" x="40" y="562" width="105" height="44" rx="8"/>
+  <text class="box-h" x="52" y="580">Admin</text>
+  <text class="t" x="52" y="596">(you)</text>
+  <rect class="box user" x="153" y="562" width="105" height="44" rx="8"/>
+  <text class="box-h" x="165" y="580">Viewers</text>
+  <text class="t" x="165" y="596">friends/family</text>
+
+  <!-- ===================== LANE 2: EC2 ===================== -->
+  <rect class="lane" x="298" y="74" width="430" height="700"/>
+  <text class="lane-title" x="314" y="98">EC2 INSTANCE</text>
+  <text class="t" x="314" y="114">t3.small ⇄ c7i.2xlarge (resize for bulk) · Elastic IP · EBS 160 GB · swap · systemd · AWS SSM control</text>
+
+  <rect class="box" x="314" y="126" width="398" height="40" rx="8"/>
+  <text class="box-h" x="326" y="151">Caddy — HTTPS reverse proxy (….nip.io → :4321)</text>
+
+  <rect class="box new" x="314" y="176" width="398" height="150" rx="8"/>
+  <text class="box-h" x="326" y="196">Control Panel — Express :4321  <tspan class="pill">NEW/EXTENDED</tspan></text>
+  <text class="t" x="326" y="214">• Upload files / .zip / .gpx</text>
+  <text class="t" x="326" y="230">• GPS tracks list (covered time range)</text>
+  <text class="t" x="326" y="246">• Run ingestion + live log</text>
+  <text class="t" x="326" y="262">• Needs-placement: drag · paste lat,lng · by-time</text>
+  <text class="t" x="326" y="278">• Bulk place from JSON · Move / Remove pins</text>
+  <text class="t" x="326" y="294">• Import from GoPro Cloud (download &amp; ingest)</text>
+  <text class="t" x="326" y="312">api: /run /gopro-ingest /place /place-by-time /place-bulk /move /tracks</text>
+
+  <rect class="box new" x="314" y="336" width="398" height="252" rx="8"/>
+  <text class="box-h" x="326" y="356">Loader Pipeline — Node/tsx  <tspan class="pill">NEW/EXTENDED</tspan></text>
+  <text class="t" x="326" y="374" font-weight="700" fill="#1c2733">Pass 1 — build GPS timeline</text>
+  <text class="t" x="338" y="390">GoPro GPMF GPS (streamed, size-guarded)</text>
+  <text class="t" x="338" y="405">+ GPX track (HR/speed)  →  GeoResolver</text>
+  <text class="t" x="338" y="420">publish track.json (downsampled)</text>
+  <text class="t" x="326" y="440" font-weight="700" fill="#1c2733">Pass 2 — per asset</text>
+  <text class="t" x="338" y="456">capturedAt: source/API · EXIF · ffprobe creation_time</text>
+  <text class="t" x="338" y="471">geo: EXIF → own-track → Takeout → GPX time-match</text>
+  <text class="t" x="338" y="486">ffmpeg → web.mp4 + poster + thumb</text>
+  <text class="t" x="338" y="501">Claude AI describe (best-effort)</text>
+  <text class="t" x="338" y="516">upload → S3 (multipart &gt; 5 GB) · then delete locals</text>
+  <text class="t" x="326" y="536" font-weight="700" fill="#1c2733">GoPro source</text>
+  <text class="t" x="338" y="552">paginate library · download (cap GOPRO_MAX_DOWNLOAD_GB)</text>
+  <text class="t" x="338" y="567">resumable (skip done by filename) · partial-cleanup</text>
+  <text class="t" x="338" y="582">captured_at = authoritative time</text>
+
+  <rect class="box" x="314" y="598" width="398" height="46" rx="8"/>
+  <text class="box-h" x="326" y="618">State (processed ids) · Pending queue · Manifest builder</text>
+  <text class="t" x="326" y="634">incoming/ (uploads + .gpx) · @gc-media/shared types</text>
+
+  <!-- ===================== LANE 3: AWS STORAGE ===================== -->
+  <rect class="lane" x="752" y="74" width="240" height="540"/>
+  <text class="lane-title" x="768" y="98">AWS STORAGE + CDN</text>
+
+  <rect class="box new" x="768" y="120" width="208" height="124" rx="8"/>
+  <text class="box-h" x="780" y="140">S3 bucket</text>
+  <text class="t" x="780" y="160">derivatives/&lt;id&gt;/</text>
+  <text class="t" x="792" y="175">web.mp4 · poster · thumb</text>
+  <text class="t" x="780" y="194">manifest.json  (pins)</text>
+  <text class="t" x="780" y="213">track.json  <tspan class="pill">NEW</tspan></text>
+  <text class="t" x="792" y="228">path + HR/speed</text>
+
+  <rect class="box" x="768" y="262" width="208" height="58" rx="8"/>
+  <text class="box-h" x="780" y="282">CloudFront CDN</text>
+  <text class="t" x="780" y="300">serves media + manifest</text>
+  <text class="t" x="780" y="314">+ track (no-cache JSON)</text>
+
+  <!-- ===================== LANE 4: VIEWER ===================== -->
+  <rect class="lane" x="1016" y="74" width="280" height="700"/>
+  <text class="lane-title" x="1032" y="98">PUBLIC MAP — Vercel / Next.js</text>
+  <text class="t" x="1032" y="114">apps/web · same-origin rewrite → CloudFront</text>
+
+  <rect class="box" x="1032" y="126" width="248" height="56" rx="8"/>
+  <text class="box-h" x="1044" y="146">useManifest · useTrack</text>
+  <text class="t" x="1044" y="164">fetch /manifest.json + /track.json</text>
+  <text class="t" x="1044" y="178">(proxied to CloudFront, no CORS)</text>
+
+  <rect class="box" x="1032" y="194" width="248" height="58" rx="8"/>
+  <text class="box-h" x="1044" y="214">MapView — Google Maps</text>
+  <text class="t" x="1044" y="232">AdvancedMarkers + clustering</text>
+  <text class="t" x="1044" y="246">terrain basemap, fit bounds</text>
+
+  <rect class="box new" x="1032" y="264" width="248" height="62" rx="8"/>
+  <text class="box-h" x="1044" y="284">TrackOverlay + Controls  <tspan class="pill">NEW</tspan></text>
+  <text class="t" x="1044" y="302">colored path polyline</text>
+  <text class="t" x="1044" y="316">Speed / Heart-rate toggle + legend</text>
+
+  <rect class="box new" x="1032" y="338" width="248" height="62" rx="8"/>
+  <text class="box-h" x="1044" y="358">PinModal  <tspan class="pill">NEW</tspan></text>
+  <text class="t" x="1044" y="376">media + AI description + labels</text>
+  <text class="t" x="1044" y="390">Prev / Next in track order (← →)</text>
+
+  <rect class="box" x="1032" y="412" width="248" height="46" rx="8"/>
+  <text class="box-h" x="1044" y="432">LabelFilter</text>
+  <text class="t" x="1044" y="448">filter pins by plants/animals/…</text>
+
+  <!-- ===================== EDGES ===================== -->
+  <!-- sources -> pipeline -->
+  <path class="edge" d="M258,149 C282,149 286,300 312,400"/>
+  <text class="edge-lbl" x="262" y="250">download originals</text>
+  <path class="edge" d="M258,227 C284,260 288,360 312,420"/>
+  <path class="edge" d="M258,304 C286,330 290,400 312,455"/>
+  <text class="edge-lbl" x="260" y="360">upload → incoming/</text>
+
+  <!-- admin -> caddy -> panel -->
+  <path class="edge" d="M145,575 C200,560 250,200 312,150"/>
+  <text class="edge-lbl" x="150" y="430">manage</text>
+  <!-- caddy -> panel -->
+  <path class="edge" d="M513,166 L513,176"/>
+  <!-- panel -> pipeline -->
+  <path class="edge" d="M513,326 L513,336"/>
+  <text class="edge-lbl" x="520" y="333">trigger runs / placement</text>
+
+  <!-- pipeline -> claude -->
+  <path class="edge" d="M338,500 C300,475 270,470 258,465"/>
+  <text class="edge-lbl" x="262" y="420">frames →</text>
+
+  <!-- pipeline -> S3 -->
+  <path class="edge" d="M712,470 C740,400 745,300 768,200"/>
+  <text class="edge-lbl" x="716" y="360">derivatives,</text>
+  <text class="edge-lbl" x="716" y="373">manifest, track</text>
+
+  <!-- S3 -> CloudFront -->
+  <path class="edge" d="M872,244 L872,262"/>
+
+  <!-- CloudFront -> viewer -->
+  <path class="edge" d="M976,291 C1000,260 1008,200 1032,165"/>
+  <text class="edge-lbl" x="980" y="235">media + JSON</text>
+
+  <!-- viewer -> google maps -->
+  <path class="edge" d="M1032,220 C700,640 360,560 258,525"/>
+  <text class="edge-lbl" x="640" y="560">tiles/markers (Google Maps API)</text>
+
+  <!-- viewers -> vercel -->
+  <path class="edge" d="M258,584 C600,720 950,560 1040,460"/>
+  <text class="edge-lbl" x="600" y="715">browse the map</text>
+
+  <text x="660" y="800" text-anchor="middle" font-size="11" fill="#6b7785">Flow: sources → loader pipeline (geolocate + transcode + describe) → S3/CloudFront (manifest.json, track.json, media) → Vercel viewer</text>
+  <text x="660" y="820" text-anchor="middle" font-size="11" fill="#6b7785">Admin drives ingestion + manual placement via the Caddy-fronted control panel on EC2.</text>
+</svg>
