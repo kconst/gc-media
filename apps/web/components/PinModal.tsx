@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { LABEL_CATEGORIES, type Asset, type LabelCategory } from "@gc-media/shared";
 
 const CATEGORY_TITLES: Record<LabelCategory, string> = {
@@ -10,11 +10,29 @@ const CATEGORY_TITLES: Record<LabelCategory, string> = {
 
 interface Props {
   asset: Asset;
+  /** Position within the track-ordered list (0-based) and the list size. */
+  index: number;
+  total: number;
+  onPrev: () => void;
+  onNext: () => void;
   onClose: () => void;
 }
 
-export function PinModal({ asset, onClose }: Props) {
+export function PinModal({ asset, index, total, onPrev, onNext, onClose }: Props) {
   const mediaRef = useRef<HTMLDivElement>(null);
+  const hasPrev = index > 0;
+  const hasNext = index >= 0 && index < total - 1;
+
+  // Arrow keys step through the track in order; Escape closes.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+      else if (e.key === "ArrowLeft" && hasPrev) onPrev();
+      else if (e.key === "ArrowRight" && hasNext) onNext();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [hasPrev, hasNext, onPrev, onNext, onClose]);
 
   function goFullscreen() {
     const el = mediaRef.current?.querySelector("video, img") as HTMLElement | null;
@@ -32,6 +50,10 @@ export function PinModal({ asset, onClose }: Props) {
           )}
         </div>
         <div className="toolbar">
+          <button onClick={onPrev} disabled={!hasPrev}>‹ Prev</button>
+          {total > 0 && <span className="counter">{index + 1} / {total}</span>}
+          <button onClick={onNext} disabled={!hasNext}>Next ›</button>
+          <span style={{ flex: 1 }} />
           <button onClick={goFullscreen}>Fullscreen</button>
           <button onClick={onClose}>Close</button>
         </div>

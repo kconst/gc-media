@@ -71,4 +71,6 @@ body { overflow: hidden; }
 .modal .desc { font-size: 14px; line-height: 1.5; color: #222; }
 .modal .toolbar { display: flex; gap: 8px; justify-content: flex-end; padding: 8px 12px; }
 .modal button { font-size: 13px; padding: 6px 12px; border-radius: 6px; border: 1px solid #ccc; cursor: pointer; background: #f7f7f7; }
+.modal button:disabled { opacity: .4; cursor: default; }
+.modal .toolbar .counter { align-self: center; font-size: 12px; color: #666; }
 .modal .cat-row { margin-top: 10px; }

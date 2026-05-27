@@ -35,6 +35,19 @@ export default function Home() {
     );
   }, [assets, active]);
 
+  // Track order = capture-time order; undated pins sort to the end.
+  const ordered = useMemo(() => {
+    const t = (a: Asset) => (a.capturedAt ? Date.parse(a.capturedAt) : Number.POSITIVE_INFINITY);
+    return [...visible].sort((a, b) => t(a) - t(b));
+  }, [visible]);
+
+  const selectedIndex = selected ? ordered.findIndex((a) => a.id === selected.id) : -1;
+  function step(delta: number) {
+    if (selectedIndex < 0) return;
+    const next = ordered[selectedIndex + delta];
+    if (next) setSelected(next);
+  }
+
   function toggle(key: string) {
     setActive((prev) => {
       const next = new Set(prev);
@@ -65,7 +78,16 @@ export default function Home() {
         </APIProvider>
       )}
 
-      {selected && <PinModal asset={selected} onClose={() => setSelected(null)} />}
+      {selected && (
+        <PinModal
+          asset={selected}
+          index={selectedIndex}
+          total={ordered.length}
+          onPrev={() => step(-1)}
+          onNext={() => step(1)}
+          onClose={() => setSelected(null)}
+        />
+      )}
     </div>
   );
 }
