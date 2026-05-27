@@ -66,6 +66,7 @@ export async function downloadGoproMedia(
   token: string,
   m: GoproMedia,
   destDir: string,
+  maxBytes: number = MAX_DOWNLOAD_BYTES,
 ): Promise<IngestItem> {
   const url = await sourceUrl(token, m.id);
   if (!url) throw new Error("no downloadable source");
@@ -75,7 +76,7 @@ export async function downloadGoproMedia(
   const r = await fetch(url);
   if (!r.ok || !r.body) throw new Error(`source HTTP ${r.status}`);
   const len = Number(r.headers.get("content-length") || 0);
-  if (len > MAX_DOWNLOAD_BYTES) {
+  if (maxBytes > 0 && len > maxBytes) {
     await r.body.cancel().catch(() => {});
     throw new Error(`too large (${(len / 1024 ** 3).toFixed(1)}GB) — skipped`);
   }

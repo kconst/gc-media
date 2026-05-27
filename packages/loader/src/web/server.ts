@@ -568,10 +568,12 @@ export async function runServer(port = 4321): Promise<void> {
   // disk never fills. Reuses the run-log channel so the panel shows progress.
   app.post("/api/gopro-ingest", (req, res) => {
     if (runActive) return res.json({ ok: false, active: true });
-    const body = req.body as { token?: string; noAi?: boolean; limit?: number };
+    const body = req.body as { token?: string; noAi?: boolean; limit?: number; maxGb?: number };
     const token = body.token?.trim().replace(/^Bearer\s+/i, "");
     if (!token) return res.status(400).json({ error: "no token" });
     const limit = Number(body.limit) > 0 ? Number(body.limit) : undefined;
+    // Per-run download cap override (e.g. lift it for the giant-clip pass).
+    const maxBytes = Number(body.maxGb) > 0 ? Number(body.maxGb) * 1024 ** 3 : undefined;
 
     runActive = true;
     runLog = [];
@@ -600,7 +602,7 @@ export async function runServer(port = 4321): Promise<void> {
         for (const m of batch) {
           try {
             pushLog(`Downloading ${m.filename}…`);
-            items.push(await downloadGoproMedia(token, m, config.incomingDir));
+            items.push(await downloadGoproMedia(token, m, config.incomingDir, maxBytes));
           } catch (e) {
             pushLog(`  FAILED download ${m.filename}: ${(e as Error).message}`);
           }
