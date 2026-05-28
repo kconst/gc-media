@@ -9,6 +9,7 @@ import { MapView } from "@/components/MapView";
 import { PinModal } from "@/components/PinModal";
 import { LabelFilter, labelKey } from "@/components/LabelFilter";
 import { VideoDurationFilter } from "@/components/VideoDurationFilter";
+import { MediaTypeToggle, type MediaType } from "@/components/MediaTypeToggle";
 import { TrackControls } from "@/components/TrackControls";
 import { metricDomain, type TrackMetric } from "@/components/TrackOverlay";
 
@@ -19,6 +20,7 @@ export default function Home() {
   const [selected, setSelected] = useState<Asset | null>(null);
   const [metric, setMetric] = useState<TrackMetric>("speed");
   const [durRange, setDurRange] = useState<[number, number] | null>(null);
+  const [mediaType, setMediaType] = useState<MediaType>("all");
 
   const hasHr = useMemo(() => !!track?.points.some((p) => p.hr !== undefined), [track]);
   const legendDomain = useMemo(
@@ -38,6 +40,7 @@ export default function Home() {
   // OR filter on labels, then (if engaged) hide videos outside the duration range.
   const visible = useMemo(() => {
     let out = assets;
+    if (mediaType !== "all") out = out.filter((a) => a.type === mediaType);
     if (active.size > 0) {
       out = out.filter((a) => LABEL_CATEGORIES.some((c) => a.labels[c].some((v) => active.has(labelKey(c, v)))));
     }
@@ -46,7 +49,7 @@ export default function Home() {
       out = out.filter((a) => a.type !== "video" || (a.durationSec !== undefined && a.durationSec >= lo && a.durationSec <= hi));
     }
     return out;
-  }, [assets, active, durRange]);
+  }, [assets, active, durRange, mediaType]);
 
   // Track order = capture-time order; undated pins sort to the end.
   const ordered = useMemo(() => {
@@ -78,7 +81,10 @@ export default function Home() {
       {apiKey && (
         <APIProvider apiKey={apiKey}>
           <LabelFilter assets={assets} active={active} onToggle={toggle} onClear={() => setActive(new Set())} />
-          <VideoDurationFilter assets={assets} range={effRange} onChange={setDurRange} />
+          <div className="map-filters">
+            <MediaTypeToggle value={mediaType} onChange={setMediaType} />
+            {mediaType !== "photo" && <VideoDurationFilter assets={assets} range={effRange} onChange={setDurRange} />}
+          </div>
           {track && track.points.length > 1 && (
             <TrackControls metric={metric} onChange={setMetric} hasHr={hasHr} domain={legendDomain} />
           )}
