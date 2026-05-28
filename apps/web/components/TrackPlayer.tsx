@@ -28,10 +28,9 @@ function fmtWallClock(epochMs: number): string {
   return `${date}  ${time}`;
 }
 
-// Top-down view of the full track corridor. Tilt 0 means no rotation as
-// playback advances, so it's not disorienting in a small preview.
-const CAM_TILT = 0;
-const CAM_HEADING = 0;
+const CAM_TILT = 60;      // degrees from vertical — shows terrain depth
+const CAM_HEADING = 0;   // north-up always, no spinning
+const CAM_RANGE = 2500;  // metres — close enough to see canyon walls
 
 // ── component ─────────────────────────────────────────────────────────────────
 
@@ -76,29 +75,11 @@ export function TrackPlayer({ track, onTime }: Props) {
     // Precompute the full 3D path; we slice into it as playback advances.
     path3dRef.current = pts.map((p) => ({ lat: p.lat, lng: p.lng, altitude: 0 }));
 
-    // Frame the entire track once and never move the camera — calmer than
-    // chasing the position around.
-    let minLat = pts[0]!.lat, maxLat = pts[0]!.lat;
-    let minLng = pts[0]!.lng, maxLng = pts[0]!.lng;
-    for (const p of pts) {
-      if (p.lat < minLat) minLat = p.lat;
-      if (p.lat > maxLat) maxLat = p.lat;
-      if (p.lng < minLng) minLng = p.lng;
-      if (p.lng > maxLng) maxLng = p.lng;
-    }
-    const centerLat = (minLat + maxLat) / 2;
-    const centerLng = (minLng + maxLng) / 2;
-    // Convert the bounding diagonal to metres and pad for the camera range.
-    const R = 6371000;
-    const dLat = ((maxLat - minLat) * Math.PI) / 180;
-    const dLng = ((maxLng - minLng) * Math.PI) / 180 * Math.cos((centerLat * Math.PI) / 180);
-    const diag = Math.hypot(dLat, dLng) * R;
-    const range = Math.max(2000, diag * 1.4);
-
+    const pt0 = pts[0]!;
     const el = new lib3d.Map3DElement({
-      center: { lat: centerLat, lng: centerLng, altitude: 0 },
+      center: { lat: pt0.lat, lng: pt0.lng, altitude: 0 },
       tilt: CAM_TILT,
-      range,
+      range: CAM_RANGE,
       heading: CAM_HEADING,
       mode: "HYBRID" as google.maps.maps3d.MapMode,
     });
@@ -138,13 +119,26 @@ export function TrackPlayer({ track, onTime }: Props) {
     };
   }, [lib3d, pts, hasStarted]);
 
-  function grow3dPath(p: number) {
-    const poly = poly3dRef.current;
-    if (!poly) return;
+  function update3d(p: number) {
     const idx = Math.max(1, indexAtTime(pts, tStart + p * tSpan));
-    if (idx === lastIdx3dRef.current) return;
-    poly.coordinates = path3dRef.current.slice(0, idx + 1);
-    lastIdx3dRef.current = idx;
+    const poly = poly3dRef.current;
+    if (poly && idx !== lastIdx3dRef.current) {
+      poly.coordinates = path3dRef.current.slice(0, idx + 1);
+      lastIdx3dRef.current = idx;
+    }
+    const el = el3dRef.current;
+    if (el) {
+      const pt = pts[idx]!;
+      el.flyCameraTo({
+        endCamera: {
+          center: { lat: pt.lat, lng: pt.lng, altitude: 0 },
+          tilt: CAM_TILT,
+          range: CAM_RANGE,
+          heading: CAM_HEADING,
+        },
+        durationMillis: 900,
+      });
+    }
   }
 
   // Animation loop — full track plays in ~8 minutes at 1×, scaled by speedRef.
@@ -186,9 +180,9 @@ export function TrackPlayer({ track, onTime }: Props) {
   // Grow the 3D polyline ~5×/sec while playing.
   useEffect(() => {
     if (!isPlaying) return;
-    const id = setInterval(() => grow3dPath(progressRef.current), 200);
+    const id = setInterval(() => update3d(progressRef.current), 200);
     return () => clearInterval(id);
-  // grow3dPath reads from refs; eslint would want it in deps but it's stable.
+  // update3d reads from refs; eslint would want it in deps but it's stable.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPlaying]);
 
@@ -233,7 +227,7 @@ export function TrackPlayer({ track, onTime }: Props) {
     setProgress(p);
     setHasStarted(true);
     onTimeRef.current(tStart + p * tSpan);
-    grow3dPath(p);
+    update3d(p);
     if (isPlaying) lastRealRef.current = performance.now();
   }
 
