@@ -890,6 +890,41 @@ export async function runServer(port = 4321): Promise<void> {
     res.status("error" in r ? 400 : 200).json("error" in r ? r : { ok: true, ...r });
   });
 
+  // Keep only assets whose originalFilename is in `filenames`; remove all
+  // others from the manifest and pending. dryRun reports only.
+  app.post("/api/keep-only", async (req, res) => {
+    const b = req.body as { filenames?: string[]; dryRun?: boolean };
+    const names = new Set((b.filenames ?? []).map((n) => n.toLowerCase()));
+    if (names.size === 0) return res.status(400).json({ error: "need filenames" });
+    const keep = (fn?: string) => !!fn && names.has(fn.toLowerCase());
+    const manifest = await loadManifest();
+    const pending = await loadPending();
+    const keepAssets = manifest.assets.filter((a) => keep(a.originalFilename));
+    const keepPending = pending.filter((p) => keep(p.originalFilename));
+
+    if (b.dryRun) {
+      return res.json({
+        ok: true,
+        dryRun: true,
+        keepManifest: keepAssets.length,
+        keepPending: keepPending.length,
+        removeManifest: manifest.assets.length - keepAssets.length,
+        removePending: pending.length - keepPending.length,
+        keptNames: [...new Set([...keepAssets, ...keepPending].map((a) => a.originalFilename))],
+      });
+    }
+
+    await saveAndPublish({ ...manifest, assets: keepAssets, bounds: computeBounds(keepAssets) });
+    await savePending(keepPending);
+    res.json({
+      ok: true,
+      keptManifest: keepAssets.length,
+      keptPending: keepPending.length,
+      removedManifest: manifest.assets.length - keepAssets.length,
+      removedPending: pending.length - keepPending.length,
+    });
+  });
+
   // Prune assets whose capture time falls outside [start,end]. Undated items
   // are kept (we can't prove they're off-window). dryRun reports only.
   app.post("/api/prune-by-date", async (req, res) => {
