@@ -1,8 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { AdvancedMarker, Map, useMap } from "@vis.gl/react-google-maps";
 import { MarkerClusterer } from "@googlemaps/markerclusterer";
-import type { Asset, MapBounds } from "@gc-media/shared";
+import type { Asset, MapBounds, Track, TrailDef } from "@gc-media/shared";
 import { Pin } from "./Pin";
+import { TrackOverlay, type TrackMetric } from "./TrackOverlay";
+import { TrailOverlay } from "./TrailOverlay";
+import { MeasureControl } from "./MeasureControl";
 
 type MarkerEl = google.maps.marker.AdvancedMarkerElement;
 
@@ -10,26 +13,29 @@ const DEFAULT_CENTER = { lat: 36.06, lng: -112.12 }; // South Rim corridor
 
 function ClusteredPins({ assets, onSelect }: { assets: Asset[]; onSelect: (a: Asset) => void }) {
   const map = useMap();
-  const [markers, setMarkers] = useState<Record<string, MarkerEl>>({});
+  // Track marker elements in a ref (not state) so attaching refs never triggers
+  // a re-render — an inline ref callback re-runs every render, and updating
+  // state from it caused an infinite loop (React #185).
+  const markersRef = useRef<Record<string, MarkerEl>>({});
 
   const clusterer = useMemo(() => {
     if (!map) return null;
     return new MarkerClusterer({ map });
   }, [map]);
 
+  // Sync the clusterer after render (refs have committed by now). Keyed on the
+  // visible asset set so it re-syncs when the manifest loads or filters change.
   useEffect(() => {
     if (!clusterer) return;
     clusterer.clearMarkers();
-    clusterer.addMarkers(Object.values(markers));
-  }, [clusterer, markers]);
+    clusterer.addMarkers(Object.values(markersRef.current));
+  }, [clusterer, assets]);
+
+  useEffect(() => () => clusterer?.clearMarkers(), [clusterer]);
 
   const setMarkerRef = useCallback((marker: MarkerEl | null, id: string) => {
-    setMarkers((prev) => {
-      if ((marker && prev[id]) || (!marker && !prev[id])) return prev;
-      if (marker) return { ...prev, [id]: marker };
-      const { [id]: _removed, ...rest } = prev;
-      return rest;
-    });
+    if (marker) markersRef.current[id] = marker;
+    else delete markersRef.current[id];
   }, []);
 
   return (
@@ -51,10 +57,14 @@ function ClusteredPins({ assets, onSelect }: { assets: Asset[]; onSelect: (a: As
 interface Props {
   assets: Asset[];
   bounds?: MapBounds;
+  track?: Track;
+  trackMetric: TrackMetric;
+  trails?: TrailDef[];
+  activeTrails?: Set<string>;
   onSelect: (a: Asset) => void;
 }
 
-export function MapView({ assets, bounds, onSelect }: Props) {
+export function MapView({ assets, bounds, track, trackMetric, trails, activeTrails, onSelect }: Props) {
   const mapId = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID ?? "DEMO_MAP_ID";
 
   return (
@@ -73,11 +83,16 @@ export function MapView({ assets, bounds, onSelect }: Props) {
             }
           : undefined
       }
-      mapTypeId="terrain"
+      mapTypeId="satellite"
       gestureHandling="greedy"
       mapTypeControl
       disableDefaultUI={false}
     >
+      {track && <TrackOverlay track={track} metric={trackMetric} />}
+      {track && trails && activeTrails && activeTrails.size > 0 && (
+        <TrailOverlay track={track} trails={trails} activeTrails={activeTrails} />
+      )}
+      {track && <MeasureControl track={track} assets={assets} onSelect={onSelect} />}
       <ClusteredPins assets={assets} onSelect={onSelect} />
     </Map>
   );

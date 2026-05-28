@@ -6,7 +6,7 @@
 export type AssetType = "photo" | "video";
 
 /** How a pin's coordinates were determined. */
-export type GeoSource = "exif" | "gopro" | "manual";
+export type GeoSource = "exif" | "takeout" | "gpx" | "gopro" | "manual";
 
 /** The four label categories shown as filterable chips on the map and modal. */
 export const LABEL_CATEGORIES = [
@@ -50,6 +50,12 @@ export interface Asset {
   /** ISO-8601 capture time, when known. */
   capturedAt?: string;
 
+  /** Original filename at ingest (e.g. GX010055.MP4); used to match by name. */
+  originalFilename?: string;
+
+  /** Video duration in seconds (videos only). */
+  durationSec?: number;
+
   description: string;
   labels: Labels;
 
@@ -69,6 +75,70 @@ export interface Manifest {
   generatedAt: string;
   bounds?: MapBounds;
   assets: Asset[];
+}
+
+/** A named Grand Canyon trail corridor, defined by approximate waypoints. */
+export interface TrailDef {
+  id: string;
+  name: string;
+  /** CSS color for the highlight overlay. */
+  color: string;
+  waypoints: Array<{ lat: number; lng: number }>;
+}
+
+/**
+ * Named trail corridors present on this trip (South Rim → Phantom Ranch).
+ * Waypoints are approximate; matching is done by proximity at runtime.
+ */
+export const TRAIL_DEFS: TrailDef[] = [
+  {
+    id: "bright-angel",
+    name: "Bright Angel Trail",
+    color: "#1a73e8",
+    waypoints: [
+      { lat: 36.0573, lng: -112.1440 }, // South Rim Trailhead
+      { lat: 36.0640, lng: -112.1412 }, // Upper switchbacks
+      { lat: 36.0720, lng: -112.1365 }, // 3-Mile area
+      { lat: 36.0870, lng: -112.1250 }, // Havasupai Gardens approach
+      { lat: 36.0960, lng: -112.1145 }, // Lower canyon
+      { lat: 36.1044, lng: -112.1012 }, // Silver Bridge / river
+      { lat: 36.1058, lng: -112.0975 }, // Bright Angel Campground
+    ],
+  },
+  {
+    id: "south-kaibab",
+    name: "South Kaibab Trail",
+    color: "#e8711a",
+    waypoints: [
+      { lat: 36.0554, lng: -112.0862 }, // South Rim Trailhead
+      { lat: 36.0595, lng: -112.0882 }, // Ooh Aah Point
+      { lat: 36.0645, lng: -112.0905 }, // Cedar Ridge
+      { lat: 36.0820, lng: -112.0966 }, // Skeleton Point
+      { lat: 36.0985, lng: -112.0990 }, // Tonto Intersection
+      { lat: 36.1048, lng: -112.0978 }, // Black Bridge / river
+      { lat: 36.1058, lng: -112.0975 }, // Phantom Ranch
+    ],
+  },
+];
+
+/** One sample of a GPS track published for the map's path overlay. */
+export interface TrackPoint {
+  lat: number;
+  lng: number;
+  /** Epoch milliseconds (UTC). */
+  t: number;
+  /** Heart rate in bpm, if the source carried it. */
+  hr?: number;
+  /** Ground speed in metres per second, derived from consecutive fixes. */
+  speed?: number;
+  /** Elevation in metres, if the source carried it. */
+  ele?: number;
+}
+
+export interface Track {
+  version: 1;
+  generatedAt: string;
+  points: TrackPoint[];
 }
 
 export function emptyLabels(): Labels {
