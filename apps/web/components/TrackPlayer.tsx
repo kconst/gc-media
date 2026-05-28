@@ -7,20 +7,6 @@ import type { Track } from "@gc-media/shared";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-function bearing(
-  a: { lat: number; lng: number },
-  b: { lat: number; lng: number },
-): number {
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const toDeg = (r: number) => (r * 180) / Math.PI;
-  const dLng = toRad(b.lng - a.lng);
-  const y = Math.sin(dLng) * Math.cos(toRad(b.lat));
-  const x =
-    Math.cos(toRad(a.lat)) * Math.sin(toRad(b.lat)) -
-    Math.sin(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.cos(dLng);
-  return (toDeg(Math.atan2(y, x)) + 360) % 360;
-}
-
 export function indexAtTime(points: Track["points"], t: number): number {
   if (t <= points[0]!.t) return 0;
   if (t >= points[points.length - 1]!.t) return points.length - 1;
@@ -34,16 +20,6 @@ export function indexAtTime(points: Track["points"], t: number): number {
   return lo;
 }
 
-function fmtMs(ms: number): string {
-  const s = Math.floor(ms / 1000);
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-  return h > 0
-    ? `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`
-    : `${m}:${String(sec).padStart(2, "0")}`;
-}
-
 /** Local time in the Grand Canyon (Arizona = America/Phoenix, UTC−7, no DST). */
 function fmtWallClock(epochMs: number): string {
   const d = new Date(epochMs);
@@ -52,9 +28,10 @@ function fmtWallClock(epochMs: number): string {
   return `${date}  ${time}`;
 }
 
-const CAM_ALT = 2000;  // metres above track elevation
-const CAM_TILT = 30;
-const CAM_RANGE = 3500;
+// Top-down view of the full track corridor. Tilt 0 means no rotation as
+// playback advances, so it's not disorienting in a small preview.
+const CAM_TILT = 0;
+const CAM_HEADING = 0;
 
 // ── component ─────────────────────────────────────────────────────────────────
 
@@ -96,13 +73,33 @@ export function TrackPlayer({ track, onTime }: Props) {
   // Build the 3D map element once the library is ready and the panel is shown.
   useEffect(() => {
     if (!lib3d || !map3dHostRef.current || !hasStarted) return;
-    const pt0 = pts[0]!;
-    const pt1 = pts[1] ?? pt0;
+    // Precompute the full 3D path; we slice into it as playback advances.
+    path3dRef.current = pts.map((p) => ({ lat: p.lat, lng: p.lng, altitude: 0 }));
+
+    // Frame the entire track once and never move the camera — calmer than
+    // chasing the position around.
+    let minLat = pts[0]!.lat, maxLat = pts[0]!.lat;
+    let minLng = pts[0]!.lng, maxLng = pts[0]!.lng;
+    for (const p of pts) {
+      if (p.lat < minLat) minLat = p.lat;
+      if (p.lat > maxLat) maxLat = p.lat;
+      if (p.lng < minLng) minLng = p.lng;
+      if (p.lng > maxLng) maxLng = p.lng;
+    }
+    const centerLat = (minLat + maxLat) / 2;
+    const centerLng = (minLng + maxLng) / 2;
+    // Convert the bounding diagonal to metres and pad for the camera range.
+    const R = 6371000;
+    const dLat = ((maxLat - minLat) * Math.PI) / 180;
+    const dLng = ((maxLng - minLng) * Math.PI) / 180 * Math.cos((centerLat * Math.PI) / 180);
+    const diag = Math.hypot(dLat, dLng) * R;
+    const range = Math.max(2000, diag * 1.4);
+
     const el = new lib3d.Map3DElement({
-      center: { lat: pt0.lat, lng: pt0.lng, altitude: (pt0.ele ?? 1500) + CAM_ALT },
+      center: { lat: centerLat, lng: centerLng, altitude: 0 },
       tilt: CAM_TILT,
-      range: CAM_RANGE,
-      heading: bearing(pt0, pt1),
+      range,
+      heading: CAM_HEADING,
       mode: "HYBRID" as google.maps.maps3d.MapMode,
     });
     el.style.width = "100%";
@@ -110,47 +107,44 @@ export function TrackPlayer({ track, onTime }: Props) {
     map3dHostRef.current.appendChild(el);
     el3dRef.current = el;
 
-    // Precompute the full 3D path; we slice into it as playback advances.
-    path3dRef.current = pts.map((p) => ({ lat: p.lat, lng: p.lng, altitude: 0 }));
+    // Faint full track as background so the route is visible from the start.
+    const bgPoly = new lib3d.Polyline3DElement({
+      coordinates: path3dRef.current,
+      strokeColor: "rgba(255,255,255,0.45)",
+      strokeWidth: 4,
+      altitudeMode: "CLAMP_TO_GROUND" as google.maps.maps3d.AltitudeMode,
+    });
+    el.append(bgPoly);
+
+    // Played portion grows on top. Start with the first two points so the
+    // element has a non-degenerate path to render.
+    const initIdx = Math.min(1, pts.length - 1);
     const poly = new lib3d.Polyline3DElement({
+      coordinates: path3dRef.current.slice(0, initIdx + 1),
       strokeColor: "#1a73e8",
-      strokeWidth: 12,
+      strokeWidth: 10,
       altitudeMode: "CLAMP_TO_GROUND" as google.maps.maps3d.AltitudeMode,
     });
     el.append(poly);
-    poly.coordinates = [path3dRef.current[0]!];
     poly3dRef.current = poly;
-    lastIdx3dRef.current = -1;
+    lastIdx3dRef.current = initIdx;
 
     return () => {
       poly.remove();
+      bgPoly.remove();
       el.remove();
       poly3dRef.current = null;
       el3dRef.current = null;
     };
   }, [lib3d, pts, hasStarted]);
 
-  function flyCamera(p: number) {
-    const el = el3dRef.current;
-    if (!el) return;
-    const idx = indexAtTime(pts, tStart + p * tSpan);
-    const pt  = pts[idx]!;
-    const nxt = pts[Math.min(idx + 1, pts.length - 1)]!;
-    el.flyCameraTo({
-      endCamera: {
-        center: { lat: pt.lat, lng: pt.lng, altitude: (pt.ele ?? 1500) + CAM_ALT },
-        tilt: CAM_TILT,
-        range: CAM_RANGE,
-        heading: bearing(pt, nxt),
-      },
-      durationMillis: 800,
-    });
-    // Grow the 3D polyline to match the camera position.
+  function grow3dPath(p: number) {
     const poly = poly3dRef.current;
-    if (poly && idx !== lastIdx3dRef.current) {
-      poly.coordinates = path3dRef.current.slice(0, idx + 1);
-      lastIdx3dRef.current = idx;
-    }
+    if (!poly) return;
+    const idx = Math.max(1, indexAtTime(pts, tStart + p * tSpan));
+    if (idx === lastIdx3dRef.current) return;
+    poly.coordinates = path3dRef.current.slice(0, idx + 1);
+    lastIdx3dRef.current = idx;
   }
 
   // Animation loop — full track plays in ~8 minutes at 1×, scaled by speedRef.
@@ -189,12 +183,12 @@ export function TrackPlayer({ track, onTime }: Props) {
     return () => { if (rafRef.current !== null) cancelAnimationFrame(rafRef.current); };
   }, [isPlaying, animate]);
 
-  // Update 3D camera every 700 ms while playing.
+  // Grow the 3D polyline ~5×/sec while playing.
   useEffect(() => {
     if (!isPlaying) return;
-    const id = setInterval(() => flyCamera(progressRef.current), 700);
+    const id = setInterval(() => grow3dPath(progressRef.current), 200);
     return () => clearInterval(id);
-  // flyCamera reads from refs; eslint would want it in deps but it's stable.
+  // grow3dPath reads from refs; eslint would want it in deps but it's stable.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPlaying]);
 
@@ -204,8 +198,9 @@ export function TrackPlayer({ track, onTime }: Props) {
       setProgress(0);
       onTimeRef.current(tStart);
       if (poly3dRef.current) {
-        poly3dRef.current.coordinates = [path3dRef.current[0]!];
-        lastIdx3dRef.current = 0;
+        const initIdx = Math.min(1, pts.length - 1);
+        poly3dRef.current.coordinates = path3dRef.current.slice(0, initIdx + 1);
+        lastIdx3dRef.current = initIdx;
       }
     }
     setHasStarted(true);
@@ -238,7 +233,7 @@ export function TrackPlayer({ track, onTime }: Props) {
     setProgress(p);
     setHasStarted(true);
     onTimeRef.current(tStart + p * tSpan);
-    flyCamera(p);
+    grow3dPath(p);
     if (isPlaying) lastRealRef.current = performance.now();
   }
 
