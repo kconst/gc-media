@@ -44,6 +44,14 @@ function fmtMs(ms: number): string {
     : `${m}:${String(sec).padStart(2, "0")}`;
 }
 
+/** Local time-of-day at the current track position (e.g. "Mon 09:14"). */
+function fmtWallClock(epochMs: number): string {
+  const d = new Date(epochMs);
+  const day = d.toLocaleDateString(undefined, { weekday: "short" });
+  const hm = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  return `${day} ${hm}`;
+}
+
 const CAM_ALT = 2000;  // metres above track elevation
 const CAM_TILT = 30;
 const CAM_RANGE = 3500;
@@ -70,6 +78,7 @@ export function TrackPlayer({ track, onTime }: Props) {
   const onTimeRef   = useRef(onTime);
   const rafRef      = useRef<number | null>(null);
   const lastRealRef = useRef<number>(0);
+  const lastEmitRef = useRef<number>(0);
   const map3dHostRef = useRef<HTMLDivElement>(null);
   const el3dRef      = useRef<google.maps.maps3d.Map3DElement | null>(null);
 
@@ -119,6 +128,9 @@ export function TrackPlayer({ track, onTime }: Props) {
   }
 
   // Animation loop — full track plays in ~3 minutes real time.
+  // setProgress runs every frame for a smooth scrubber. The parent's onTime
+  // (which drives the pin-reveal filter + clusterer rebuild) is throttled to
+  // 200 ms so the marker layer doesn't churn 60×/sec and flicker.
   const animate = useCallback(
     (now: number) => {
       const dt = now - lastRealRef.current;
@@ -126,7 +138,10 @@ export function TrackPlayer({ track, onTime }: Props) {
       const next = Math.min(1, progressRef.current + dt / (3 * 60 * 1000));
       progressRef.current = next;
       setProgress(next);
-      onTimeRef.current(tStart + next * tSpan);
+      if (next >= 1 || now - lastEmitRef.current >= 200) {
+        lastEmitRef.current = now;
+        onTimeRef.current(tStart + next * tSpan);
+      }
       if (next >= 1) {
         setIsPlaying(false);
         return;
@@ -192,6 +207,8 @@ export function TrackPlayer({ track, onTime }: Props) {
     if (isPlaying) lastRealRef.current = performance.now();
   }
 
+  const currentEpoch = tStart + progress * tSpan;
+
   return createPortal(
     <>
       <div className="player-bar">
@@ -200,7 +217,9 @@ export function TrackPlayer({ track, onTime }: Props) {
         ) : (
           <button className="player-btn" onClick={handlePlay} aria-label="Play">▶</button>
         )}
-        <span className="player-time">{fmtMs(progress * tSpan)}</span>
+        <span className="player-time" title="Time of day at the current track position">
+          {fmtWallClock(currentEpoch)}
+        </span>
         <input
           type="range"
           className="player-scrubber"
@@ -209,7 +228,9 @@ export function TrackPlayer({ track, onTime }: Props) {
           value={Math.round(progress * 10000)}
           onChange={handleScrub}
         />
-        <span className="player-time">{fmtMs(tSpan)}</span>
+        <span className="player-time" title="Wall-clock duration of the recorded track">
+          {fmtMs(tSpan)} trip
+        </span>
         <button className="player-btn player-btn-reset" onClick={handleReset} title="Reset">↺</button>
       </div>
 
