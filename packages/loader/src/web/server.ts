@@ -15,6 +15,7 @@ import { loadManifest, removeAsset, saveAndPublish, upsertAssets } from "../mani
 import { State } from "../state.js";
 import { listGpxFiles, loadGpxTracks } from "../meta/gpx.js";
 import { readVideoDuration } from "../meta/videoTime.js";
+import { listAllKeys, deleteKeys } from "../media/s3.js";
 import { GeoResolver } from "../geo/resolver.js";
 
 function timingSafeEqual(a: string, b: string): boolean {
@@ -888,6 +889,27 @@ export async function runServer(port = 4321): Promise<void> {
     }
     const r = await bulkPlaceByTime(items);
     res.status("error" in r ? 400 : 200).json("error" in r ? r : { ok: true, ...r });
+  });
+
+  // Garbage-collect S3: delete every object whose asset-id prefix is not
+  // referenced by a current pin or pending item (root files like
+  // manifest.json / track.json have no id prefix and are kept). dryRun reports.
+  app.post("/api/gc-s3", async (req, res) => {
+    const dryRun = !!(req.body as { dryRun?: boolean }).dryRun;
+    const manifest = await loadManifest();
+    const pending = await loadPending();
+    const referenced = new Set<string>([
+      ...manifest.assets.map((a) => a.id),
+      ...pending.map((p) => p.id),
+    ]);
+    const keys = await listAllKeys();
+    const orphan = keys.filter((k) => k.includes("/") && !referenced.has(k.split("/")[0]!));
+    const orphanAssets = new Set(orphan.map((k) => k.split("/")[0]));
+    if (dryRun) {
+      return res.json({ ok: true, dryRun: true, totalKeys: keys.length, orphanKeys: orphan.length, orphanAssets: orphanAssets.size });
+    }
+    const deleted = await deleteKeys(orphan);
+    res.json({ ok: true, deletedKeys: deleted, orphanAssets: orphanAssets.size });
   });
 
   // Keep only assets whose originalFilename is in `filenames`; remove all

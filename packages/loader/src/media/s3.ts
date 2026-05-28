@@ -6,6 +6,8 @@ import {
   UploadPartCommand,
   CompleteMultipartUploadCommand,
   AbortMultipartUploadCommand,
+  ListObjectsV2Command,
+  DeleteObjectsCommand,
 } from "@aws-sdk/client-s3";
 import { config } from "../config.js";
 
@@ -122,4 +124,34 @@ export async function uploadBuffer(
     }),
   );
   return cloudfrontUrl(key);
+}
+
+/** List every object key in the bucket (paginated). */
+export async function listAllKeys(): Promise<string[]> {
+  const out: string[] = [];
+  let token: string | undefined;
+  do {
+    const r = await s3().send(
+      new ListObjectsV2Command({ Bucket: config.aws.bucket(), ContinuationToken: token }),
+    );
+    for (const o of r.Contents ?? []) if (o.Key) out.push(o.Key);
+    token = r.IsTruncated ? r.NextContinuationToken : undefined;
+  } while (token);
+  return out;
+}
+
+/** Delete the given keys (batched 1000 per request). Returns the count. */
+export async function deleteKeys(keys: string[]): Promise<number> {
+  let n = 0;
+  for (let i = 0; i < keys.length; i += 1000) {
+    const batch = keys.slice(i, i + 1000);
+    await s3().send(
+      new DeleteObjectsCommand({
+        Bucket: config.aws.bucket(),
+        Delete: { Objects: batch.map((Key) => ({ Key })), Quiet: true },
+      }),
+    );
+    n += batch.length;
+  }
+  return n;
 }
