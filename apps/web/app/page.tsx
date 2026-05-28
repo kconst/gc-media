@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { APIProvider } from "@vis.gl/react-google-maps";
-import { LABEL_CATEGORIES, type Asset } from "@gc-media/shared";
+import { LABEL_CATEGORIES, TRAIL_DEFS, type Asset } from "@gc-media/shared";
 import { useManifest } from "@/hooks/useManifest";
 import { useTrack } from "@/hooks/useTrack";
 import { MapView } from "@/components/MapView";
@@ -12,6 +12,7 @@ import { VideoDurationFilter } from "@/components/VideoDurationFilter";
 import { MediaTypeToggle, type MediaType } from "@/components/MediaTypeToggle";
 import { TrackControls } from "@/components/TrackControls";
 import { metricDomain, type TrackMetric } from "@/components/TrackOverlay";
+import { TrailToggles } from "@/components/TrailToggles";
 
 export default function Home() {
   const { manifest, loading, error } = useManifest();
@@ -21,6 +22,7 @@ export default function Home() {
   const [metric, setMetric] = useState<TrackMetric>("speed");
   const [durRange, setDurRange] = useState<[number, number] | null>(null);
   const [mediaType, setMediaType] = useState<MediaType>("all");
+  const [activeTrails, setActiveTrails] = useState<Set<string>>(new Set());
 
   const hasHr = useMemo(() => !!track?.points.some((p) => p.hr !== undefined), [track]);
   const legendDomain = useMemo(
@@ -88,11 +90,26 @@ export default function Home() {
           {track && track.points.length > 1 && (
             <TrackControls metric={metric} onChange={setMetric} hasHr={hasHr} domain={legendDomain} />
           )}
+          {track && track.points.length > 1 && (
+            <TrailToggles
+              trails={TRAIL_DEFS}
+              active={activeTrails}
+              onToggle={(id) =>
+                setActiveTrails((prev) => {
+                  const next = new Set(prev);
+                  next.has(id) ? next.delete(id) : next.add(id);
+                  return next;
+                })
+              }
+            />
+          )}
           <MapView
             assets={visible}
             bounds={manifest?.bounds}
             track={track}
             trackMetric={metric}
+            trails={TRAIL_DEFS}
+            activeTrails={activeTrails}
             onSelect={setSelected}
           />
         </APIProvider>

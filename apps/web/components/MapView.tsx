@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { AdvancedMarker, Map, useMap } from "@vis.gl/react-google-maps";
 import { MarkerClusterer } from "@googlemaps/markerclusterer";
-import type { Asset, MapBounds, Track } from "@gc-media/shared";
+import type { Asset, MapBounds, Track, TrailDef } from "@gc-media/shared";
 import { Pin } from "./Pin";
 import { TrackOverlay, type TrackMetric } from "./TrackOverlay";
+import { TrailOverlay } from "./TrailOverlay";
 import { MeasureControl } from "./MeasureControl";
 
 type MarkerEl = google.maps.marker.AdvancedMarkerElement;
@@ -58,10 +59,12 @@ interface Props {
   bounds?: MapBounds;
   track?: Track;
   trackMetric: TrackMetric;
+  trails?: TrailDef[];
+  activeTrails?: Set<string>;
   onSelect: (a: Asset) => void;
 }
 
-export function MapView({ assets, bounds, track, trackMetric, onSelect }: Props) {
+export function MapView({ assets, bounds, track, trackMetric, trails, activeTrails, onSelect }: Props) {
   const mapId = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID ?? "DEMO_MAP_ID";
 
   return (
@@ -86,6 +89,9 @@ export function MapView({ assets, bounds, track, trackMetric, onSelect }: Props)
       disableDefaultUI={false}
     >
       {track && <TrackOverlay track={track} metric={trackMetric} />}
+      {track && trails && activeTrails && activeTrails.size > 0 && (
+        <TrailOverlay track={track} trails={trails} activeTrails={activeTrails} />
+      )}
       {track && <MeasureControl track={track} assets={assets} onSelect={onSelect} />}
       <ClusteredPins assets={assets} onSelect={onSelect} />
     </Map>

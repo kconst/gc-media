@@ -110,6 +110,37 @@ body { overflow: hidden; }
   background: linear-gradient(to right, hsl(240,85%,50%), hsl(120,85%,50%), hsl(0,85%,50%));
 }
 
+/* --- Trail toggles --- */
+.trail-toggles {
+  position: absolute; top: 140px; right: 12px; z-index: 5;
+  background: rgba(255,255,255,.95); border-radius: 10px; padding: 8px 10px;
+  box-shadow: 0 2px 10px rgba(0,0,0,.2); min-width: 170px;
+}
+.trail-toggles-head { font-size: 11px; font-weight: 700; text-transform: uppercase; color: #666; margin-bottom: 5px; letter-spacing: .04em; }
+.trail-btn {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  font-size: 12px; padding: 5px 8px; margin-bottom: 2px; border-radius: 7px;
+  border: 1.5px solid color-mix(in srgb, var(--tc) 40%, #ccc); background: #fff;
+  cursor: pointer; color: #333; text-align: left;
+}
+.trail-btn:last-child { margin-bottom: 0; }
+.trail-btn .trail-dot {
+  width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+  background: var(--tc); opacity: 0.5;
+}
+.trail-btn.on { background: color-mix(in srgb, var(--tc) 15%, #fff); border-color: var(--tc); color: color-mix(in srgb, var(--tc) 80%, #000); }
+.trail-btn.on .trail-dot { opacity: 1; }
+
+/* Trail name label rendered as AdvancedMarker content */
+.trail-label {
+  background: color-mix(in srgb, var(--tc) 18%, #fff);
+  border: 1.5px solid var(--tc); border-radius: 6px;
+  padding: 3px 8px; font-size: 12px; font-weight: 700;
+  color: color-mix(in srgb, var(--tc) 80%, #000);
+  white-space: nowrap; box-shadow: 0 1px 4px rgba(0,0,0,.25);
+  pointer-events: none;
+}
+
 /* --- Modal --- */
 .modal-backdrop {
   position: absolute; inset: 0; background: rgba(0,0,0,.45); z-index: 10;

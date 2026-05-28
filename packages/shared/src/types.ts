@@ -77,6 +77,50 @@ export interface Manifest {
   assets: Asset[];
 }
 
+/** A named Grand Canyon trail corridor, defined by approximate waypoints. */
+export interface TrailDef {
+  id: string;
+  name: string;
+  /** CSS color for the highlight overlay. */
+  color: string;
+  waypoints: Array<{ lat: number; lng: number }>;
+}
+
+/**
+ * Named trail corridors present on this trip (South Rim → Phantom Ranch).
+ * Waypoints are approximate; matching is done by proximity at runtime.
+ */
+export const TRAIL_DEFS: TrailDef[] = [
+  {
+    id: "bright-angel",
+    name: "Bright Angel Trail",
+    color: "#1a73e8",
+    waypoints: [
+      { lat: 36.0573, lng: -112.1440 }, // South Rim Trailhead
+      { lat: 36.0640, lng: -112.1412 }, // Upper switchbacks
+      { lat: 36.0720, lng: -112.1365 }, // 3-Mile area
+      { lat: 36.0870, lng: -112.1250 }, // Havasupai Gardens approach
+      { lat: 36.0960, lng: -112.1145 }, // Lower canyon
+      { lat: 36.1044, lng: -112.1012 }, // Silver Bridge / river
+      { lat: 36.1058, lng: -112.0975 }, // Bright Angel Campground
+    ],
+  },
+  {
+    id: "south-kaibab",
+    name: "South Kaibab Trail",
+    color: "#e8711a",
+    waypoints: [
+      { lat: 36.0554, lng: -112.0862 }, // South Rim Trailhead
+      { lat: 36.0595, lng: -112.0882 }, // Ooh Aah Point
+      { lat: 36.0645, lng: -112.0905 }, // Cedar Ridge
+      { lat: 36.0820, lng: -112.0966 }, // Skeleton Point
+      { lat: 36.0985, lng: -112.0990 }, // Tonto Intersection
+      { lat: 36.1048, lng: -112.0978 }, // Black Bridge / river
+      { lat: 36.1058, lng: -112.0975 }, // Phantom Ranch
+    ],
+  },
+];
+
 /** One sample of a GPS track published for the map's path overlay. */
 export interface TrackPoint {
   lat: number;
