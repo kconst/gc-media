@@ -1,7 +1,48 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useMap } from "@vis.gl/react-google-maps";
+import { useMap, useMapsLibrary } from "@vis.gl/react-google-maps";
 import type { Asset, Track, TrackPoint } from "@gc-media/shared";
+
+interface Center {
+  lat: number;
+  lng: number;
+  alt: number;
+}
+
+/** Photorealistic 3D map that slowly orbits the segment's center. */
+function Map3DView({ center, onClose }: { center: Center; onClose: () => void }) {
+  const lib = useMapsLibrary("maps3d") as typeof google.maps.maps3d | null;
+  const hostRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!lib || !hostRef.current) return;
+    const cam = { center: { lat: center.lat, lng: center.lng, altitude: center.alt }, tilt: 62, range: 4000 };
+    const el = new lib.Map3DElement({ ...cam, heading: 0, mode: "HYBRID" as google.maps.maps3d.MapMode });
+    el.style.width = "100%";
+    el.style.height = "100%";
+    hostRef.current.appendChild(el);
+    let stop = false;
+    const orbit = () => {
+      if (stop) return;
+      el.flyCameraAround({ camera: cam, durationMillis: 45000, rounds: 1 });
+    };
+    el.addEventListener("gmp-animationend", orbit);
+    const t = setTimeout(orbit, 600);
+    return () => {
+      stop = true;
+      clearTimeout(t);
+      el.remove();
+    };
+  }, [lib, center]);
+
+  return (
+    <div className="map3d-panel">
+      <button className="x" onClick={onClose} aria-label="Close 3D view">×</button>
+      {!lib && <div className="map3d-msg">Loading 3D…</div>}
+      <div ref={hostRef} className="map3d-canvas" />
+    </div>
+  );
+}
 
 const M_TO_MI = 1 / 1609.344;
 const MPS_TO_MPH = 2.23694;
@@ -27,7 +68,7 @@ interface Stats {
   maxHr?: number;
   gainFt?: number;
   lossFt?: number;
-  media: number;
+  media: Asset[];
 }
 
 function computeSegment(pts: TrackPoint[], i0: number, i1: number, assets: Asset[]): Stats {
@@ -59,10 +100,12 @@ function computeSegment(pts: TrackPoint[], i0: number, i1: number, assets: Asset
     }
   }
   const durS = Math.max(1, (t1 - t0) / 1000);
-  const media = assets.filter((a) => {
-    const t = a.capturedAt ? Date.parse(a.capturedAt) : NaN;
-    return Number.isFinite(t) && t >= t0 && t <= t1;
-  }).length;
+  const media = assets
+    .filter((a) => {
+      const t = a.capturedAt ? Date.parse(a.capturedAt) : NaN;
+      return Number.isFinite(t) && t >= t0 && t <= t1;
+    })
+    .sort((a, b) => (a.capturedAt ?? "").localeCompare(b.capturedAt ?? ""));
   return {
     durationMs: t1 - t0,
     distM,
@@ -84,7 +127,15 @@ function fmtDur(ms: number): string {
   return h ? `${h}h ${m}m` : m ? `${m}m ${sec}s` : `${sec}s`;
 }
 
-export function MeasureControl({ track, assets }: { track?: Track; assets: Asset[] }) {
+export function MeasureControl({
+  track,
+  assets,
+  onSelect,
+}: {
+  track?: Track;
+  assets: Asset[];
+  onSelect: (a: Asset) => void;
+}) {
   const map = useMap();
   const overlayRef = useRef<google.maps.OverlayView | null>(null);
   const segLineRef = useRef<google.maps.Polyline | null>(null);
@@ -93,6 +144,7 @@ export function MeasureControl({ track, assets }: { track?: Track; assets: Asset
   const drawing = useRef(false);
   const [stats, setStats] = useState<Stats | null>(null);
   const [bubble, setBubble] = useState<{ x: number; y: number } | null>(null);
+  const [center, setCenter] = useState<Center | null>(null);
 
   // An OverlayView gives us the pixel<->latLng projection.
   useEffect(() => {
@@ -146,10 +198,18 @@ export function MeasureControl({ track, assets }: { track?: Track; assets: Asset
     if (hi <= lo) return;
     setStats(computeSegment(tp, lo, hi, assets));
     setBubble(points[points.length - 1]!);
+
+    // Center the 3D view on the segment's mean position.
+    const seg = tp.slice(lo, hi + 1);
+    const mid = seg[Math.floor(seg.length / 2)]!;
+    const meanLat = seg.reduce((s, p) => s + p.lat, 0) / seg.length;
+    const meanLng = seg.reduce((s, p) => s + p.lng, 0) / seg.length;
+    setCenter({ lat: meanLat, lng: meanLng, alt: mid.ele ?? 0 });
+
     // highlight the matched segment on the map
     clearSeg();
     segLineRef.current = new google.maps.Polyline({
-      path: tp.slice(lo, hi + 1).map((p) => ({ lat: p.lat, lng: p.lng })),
+      path: seg.map((p) => ({ lat: p.lat, lng: p.lng })),
       strokeColor: "#ff3b30",
       strokeOpacity: 0.9,
       strokeWeight: 6,
@@ -161,6 +221,7 @@ export function MeasureControl({ track, assets }: { track?: Track; assets: Asset
   function close() {
     setStats(null);
     setBubble(null);
+    setCenter(null);
     clearSeg();
   }
 
@@ -224,10 +285,25 @@ export function MeasureControl({ track, assets }: { track?: Track; assets: Asset
             {stats.maxHr !== undefined && (<><dt>Max HR</dt><dd>{stats.maxHr} bpm</dd></>)}
             {stats.gainFt !== undefined && (<><dt>Elev gain</dt><dd>+{stats.gainFt} ft</dd></>)}
             {stats.lossFt !== undefined && (<><dt>Elev loss</dt><dd>−{stats.lossFt} ft</dd></>)}
-            <dt>Photos/videos</dt><dd>{stats.media}</dd>
+            <dt>Photos/videos</dt><dd>{stats.media.length}</dd>
           </dl>
+          {stats.media.length > 0 && (
+            <div className="measure-thumbs">
+              {stats.media.map((a) => (
+                <img
+                  key={a.id}
+                  src={a.thumbnailUrl}
+                  title={`${a.type}${a.capturedAt ? " · " + a.capturedAt.slice(11, 16) : ""}`}
+                  className={a.type === "video" ? "vid" : ""}
+                  onClick={() => onSelect(a)}
+                />
+              ))}
+            </div>
+          )}
         </div>
       )}
+
+      {center && <Map3DView center={center} onClose={close} />}
     </>,
     document.body,
   );

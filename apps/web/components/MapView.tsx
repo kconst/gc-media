@@ -86,7 +86,7 @@ export function MapView({ assets, bounds, track, trackMetric, onSelect }: Props)
       disableDefaultUI={false}
     >
       {track && <TrackOverlay track={track} metric={trackMetric} />}
-      {track && <MeasureControl track={track} assets={assets} />}
+      {track && <MeasureControl track={track} assets={assets} onSelect={onSelect} />}
       <ClusteredPins assets={assets} onSelect={onSelect} />
     </Map>
   );
