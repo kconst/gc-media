@@ -13,6 +13,7 @@ import { MediaTypeToggle, type MediaType } from "@/components/MediaTypeToggle";
 import { TrackControls } from "@/components/TrackControls";
 import { metricDomain, type TrackMetric } from "@/components/TrackOverlay";
 import { TrailToggles } from "@/components/TrailToggles";
+import { TrackPlayer } from "@/components/TrackPlayer";
 
 export default function Home() {
   const { manifest, loading, error } = useManifest();
@@ -23,6 +24,7 @@ export default function Home() {
   const [durRange, setDurRange] = useState<[number, number] | null>(null);
   const [mediaType, setMediaType] = useState<MediaType>("all");
   const [activeTrails, setActiveTrails] = useState<Set<string>>(new Set());
+  const [playbackTime, setPlaybackTime] = useState<number | null>(null);
 
   const hasHr = useMemo(() => !!track?.points.some((p) => p.hr !== undefined), [track]);
   const legendDomain = useMemo(
@@ -39,7 +41,7 @@ export default function Home() {
   );
   const effRange: [number, number] = durRange ?? [0, maxDur];
 
-  // OR filter on labels, then (if engaged) hide videos outside the duration range.
+  // Apply all active filters; during playback also gate by capture time.
   const visible = useMemo(() => {
     let out = assets;
     if (mediaType !== "all") out = out.filter((a) => a.type === mediaType);
@@ -50,8 +52,12 @@ export default function Home() {
       const [lo, hi] = durRange;
       out = out.filter((a) => a.type !== "video" || a.durationSec === undefined || (a.durationSec >= lo && a.durationSec <= hi));
     }
+    if (playbackTime !== null) {
+      // Only reveal pins the playback has passed; pins without a timestamp stay hidden.
+      out = out.filter((a) => a.capturedAt !== undefined && Date.parse(a.capturedAt) <= playbackTime);
+    }
     return out;
-  }, [assets, active, durRange, mediaType]);
+  }, [assets, active, durRange, mediaType, playbackTime]);
 
   // Track order = capture-time order; undated pins sort to the end.
   const ordered = useMemo(() => {
@@ -103,6 +109,9 @@ export default function Home() {
               }
             />
           )}
+          {track && track.points.length > 1 && (
+            <TrackPlayer track={track} onTime={setPlaybackTime} />
+          )}
           <MapView
             assets={visible}
             bounds={manifest?.bounds}
@@ -110,6 +119,7 @@ export default function Home() {
             trackMetric={metric}
             trails={TRAIL_DEFS}
             activeTrails={activeTrails}
+            playbackTime={playbackTime}
             onSelect={setSelected}
           />
         </APIProvider>

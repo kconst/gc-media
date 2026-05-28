@@ -5,6 +5,7 @@ import type { Asset, MapBounds, Track, TrailDef } from "@gc-media/shared";
 import { Pin } from "./Pin";
 import { TrackOverlay, type TrackMetric } from "./TrackOverlay";
 import { TrailOverlay } from "./TrailOverlay";
+import { PlaybackTrackOverlay } from "./PlaybackTrackOverlay";
 import { MeasureControl } from "./MeasureControl";
 
 type MarkerEl = google.maps.marker.AdvancedMarkerElement;
@@ -61,10 +62,12 @@ interface Props {
   trackMetric: TrackMetric;
   trails?: TrailDef[];
   activeTrails?: Set<string>;
+  /** When non-null the map is in playback mode: draw the track progressively. */
+  playbackTime?: number | null;
   onSelect: (a: Asset) => void;
 }
 
-export function MapView({ assets, bounds, track, trackMetric, trails, activeTrails, onSelect }: Props) {
+export function MapView({ assets, bounds, track, trackMetric, trails, activeTrails, playbackTime, onSelect }: Props) {
   const mapId = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID ?? "DEMO_MAP_ID";
 
   return (
@@ -88,11 +91,12 @@ export function MapView({ assets, bounds, track, trackMetric, trails, activeTrai
       mapTypeControl
       disableDefaultUI={false}
     >
-      {track && <TrackOverlay track={track} metric={trackMetric} />}
+      {track && playbackTime == null && <TrackOverlay track={track} metric={trackMetric} />}
+      {track && playbackTime != null && <PlaybackTrackOverlay track={track} time={playbackTime} />}
       {track && trails && activeTrails && activeTrails.size > 0 && (
         <TrailOverlay track={track} trails={trails} activeTrails={activeTrails} />
       )}
-      {track && <MeasureControl track={track} assets={assets} onSelect={onSelect} />}
+      {track && playbackTime == null && <MeasureControl track={track} assets={assets} onSelect={onSelect} />}
       <ClusteredPins assets={assets} onSelect={onSelect} />
     </Map>
   );

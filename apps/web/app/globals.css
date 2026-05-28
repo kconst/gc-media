@@ -110,6 +110,41 @@ body { overflow: hidden; }
   background: linear-gradient(to right, hsl(240,85%,50%), hsl(120,85%,50%), hsl(0,85%,50%));
 }
 
+/* --- Track playback player --- */
+.player-bar {
+  position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
+  z-index: 9; display: flex; align-items: center; gap: 10px;
+  min-width: 380px; max-width: 580px; width: 55vw;
+  background: rgba(12,12,12,.90); color: #fff; border-radius: 14px;
+  padding: 10px 14px; box-shadow: 0 4px 24px rgba(0,0,0,.55);
+  backdrop-filter: blur(6px);
+}
+.player-btn {
+  flex-shrink: 0; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.18);
+  color: #fff; border-radius: 8px; padding: 5px 12px; font-size: 16px; cursor: pointer;
+  transition: background .15s;
+}
+.player-btn:hover { background: rgba(255,255,255,.22); }
+.player-btn-reset { font-size: 18px; }
+.player-time { font-size: 11px; font-variant-numeric: tabular-nums; color: #ccc; flex-shrink: 0; }
+.player-scrubber {
+  flex: 1; accent-color: #1a73e8; cursor: pointer; min-width: 0;
+}
+
+/* 3D overhead panel for playback */
+.player-3d {
+  position: fixed; right: 12px; bottom: 70px; z-index: 8;
+  width: 380px; height: 260px; background: #000;
+  border-radius: 12px; overflow: hidden; box-shadow: 0 8px 30px rgba(0,0,0,.5);
+}
+
+/* Current-position dot on the 2D map */
+.playback-dot {
+  width: 14px; height: 14px; border-radius: 50%;
+  background: #1a73e8; border: 3px solid #fff;
+  box-shadow: 0 0 0 2px #1a73e8, 0 2px 6px rgba(0,0,0,.4);
+}
+
 /* --- Trail toggles --- */
 .trail-toggles {
   position: absolute; top: 140px; right: 12px; z-index: 5;
