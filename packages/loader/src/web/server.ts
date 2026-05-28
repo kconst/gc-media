@@ -917,6 +917,14 @@ export async function runServer(port = 4321): Promise<void> {
     }
 
     if (b.dryRun) {
+      const removed = [...manRemove, ...penRemove]
+        .map((a) => ({
+          thumbnailUrl: a.thumbnailUrl,
+          capturedAt: a.capturedAt,
+          type: a.type,
+          originalFilename: a.originalFilename,
+        }))
+        .sort((x, y) => (x.capturedAt ?? "").localeCompare(y.capturedAt ?? ""));
       return res.json({
         ok: true,
         dryRun: true,
@@ -926,6 +934,7 @@ export async function runServer(port = 4321): Promise<void> {
         wouldRemoveManifest: manRemove.length,
         wouldRemovePending: penRemove.length,
         removedByDate: Object.fromEntries(Object.entries(hist).sort()),
+        removed,
       });
     }
 
