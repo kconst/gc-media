@@ -41,9 +41,9 @@ function fmtWallClock(epochMs: number): string {
   return `${date}  ${time}`;
 }
 
-const CAM_TILT = 60;      // degrees from vertical — shows terrain depth
+const CAM_TILT = 45;      // degrees from vertical — shows terrain depth
 const CAM_HEADING = 0;    // north-up always, no spinning
-const CAM_RANGE = 2500;   // metres — close enough to see canyon walls
+const CAM_RANGE = 12000;  // metres — far enough to see canyon context
 
 // ── component ─────────────────────────────────────────────────────────────────
 
