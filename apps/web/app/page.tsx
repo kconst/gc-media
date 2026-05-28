@@ -20,7 +20,7 @@ export default function Home() {
   const { track } = useTrack();
   const [active, setActive] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Asset | null>(null);
-  const [metric, setMetric] = useState<TrackMetric>("speed");
+  const [metric, setMetric] = useState<TrackMetric>("hr");
   const [durRange, setDurRange] = useState<[number, number] | null>(null);
   const [mediaType, setMediaType] = useState<MediaType>("all");
   const [activeTrails, setActiveTrails] = useState<Set<string>>(new Set());
