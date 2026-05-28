@@ -44,12 +44,12 @@ function fmtMs(ms: number): string {
     : `${m}:${String(sec).padStart(2, "0")}`;
 }
 
-/** Local time-of-day at the current track position (e.g. "Mon 09:14"). */
+/** Local time in the Grand Canyon (Arizona = America/Phoenix, UTC−7, no DST). */
 function fmtWallClock(epochMs: number): string {
   const d = new Date(epochMs);
-  const day = d.toLocaleDateString(undefined, { weekday: "short" });
-  const hm = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-  return `${day} ${hm}`;
+  const date = d.toLocaleDateString("en-US", { timeZone: "America/Phoenix", month: "short", day: "numeric" });
+  const time = d.toLocaleTimeString("en-US", { timeZone: "America/Phoenix", hour: "numeric", minute: "2-digit", hour12: true });
+  return `${date}  ${time}`;
 }
 
 const CAM_ALT = 2000;  // metres above track elevation
@@ -73,8 +73,10 @@ export function TrackPlayer({ track, onTime }: Props) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0); // 0..1 (UI only)
   const [hasStarted, setHasStarted] = useState(false);
+  const [speed, setSpeed] = useState(1); // multiplier relative to 8-min base
 
   const progressRef = useRef(0);
+  const speedRef    = useRef(1);
   const onTimeRef   = useRef(onTime);
   const rafRef      = useRef<number | null>(null);
   const lastRealRef = useRef<number>(0);
@@ -127,15 +129,14 @@ export function TrackPlayer({ track, onTime }: Props) {
     });
   }
 
-  // Animation loop — full track plays in ~3 minutes real time.
-  // setProgress runs every frame for a smooth scrubber. The parent's onTime
-  // (which drives the pin-reveal filter + clusterer rebuild) is throttled to
-  // 200 ms so the marker layer doesn't churn 60×/sec and flicker.
+  // Animation loop — full track plays in ~8 minutes at 1×, scaled by speedRef.
+  // setProgress runs every frame for a smooth scrubber. onTime is throttled to
+  // 200 ms so the clusterer doesn't churn 60×/sec and cause flicker.
   const animate = useCallback(
     (now: number) => {
       const dt = now - lastRealRef.current;
       lastRealRef.current = now;
-      const next = Math.min(1, progressRef.current + dt / (3 * 60 * 1000));
+      const next = Math.min(1, progressRef.current + dt * speedRef.current / (8 * 60 * 1000));
       progressRef.current = next;
       setProgress(next);
       if (next >= 1 || now - lastEmitRef.current >= 200) {
@@ -197,6 +198,12 @@ export function TrackPlayer({ track, onTime }: Props) {
     onTimeRef.current(null);
   }
 
+  function handleSpeed(s: number) {
+    speedRef.current = s;
+    setSpeed(s);
+    if (isPlaying) lastRealRef.current = performance.now();
+  }
+
   function handleScrub(e: React.ChangeEvent<HTMLInputElement>) {
     const p = Number(e.target.value) / 10000;
     progressRef.current = p;
@@ -228,9 +235,15 @@ export function TrackPlayer({ track, onTime }: Props) {
           value={Math.round(progress * 10000)}
           onChange={handleScrub}
         />
-        <span className="player-time" title="Wall-clock duration of the recorded track">
-          {fmtMs(tSpan)} trip
-        </span>
+        <div className="player-speeds">
+          {([1, 2, 4] as const).map((s) => (
+            <button
+              key={s}
+              className={`player-speed-btn${speed === s ? " on" : ""}`}
+              onClick={() => handleSpeed(s)}
+            >{s}×</button>
+          ))}
+        </div>
         <button className="player-btn player-btn-reset" onClick={handleReset} title="Reset">↺</button>
       </div>
 

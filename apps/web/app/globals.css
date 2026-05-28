@@ -127,9 +127,13 @@ body { overflow: hidden; }
 .player-btn:hover { background: rgba(255,255,255,.22); }
 .player-btn-reset { font-size: 18px; }
 .player-time { font-size: 11px; font-variant-numeric: tabular-nums; color: #ccc; flex-shrink: 0; }
-.player-scrubber {
-  flex: 1; accent-color: #1a73e8; cursor: pointer; min-width: 0;
+.player-scrubber { flex: 1; accent-color: #1a73e8; cursor: pointer; min-width: 0; }
+.player-speeds { display: flex; gap: 3px; flex-shrink: 0; }
+.player-speed-btn {
+  background: rgba(255,255,255,.10); border: 1px solid rgba(255,255,255,.18);
+  color: #ccc; border-radius: 6px; padding: 3px 8px; font-size: 11px; cursor: pointer;
 }
+.player-speed-btn.on { background: #1a73e8; border-color: #1a73e8; color: #fff; }
 
 /* 3D overhead panel for playback */
 .player-3d {
