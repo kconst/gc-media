@@ -83,6 +83,9 @@ export function TrackPlayer({ track, onTime }: Props) {
   const lastEmitRef = useRef<number>(0);
   const map3dHostRef = useRef<HTMLDivElement>(null);
   const el3dRef      = useRef<google.maps.maps3d.Map3DElement | null>(null);
+  const poly3dRef    = useRef<google.maps.maps3d.Polyline3DElement | null>(null);
+  const path3dRef    = useRef<google.maps.LatLngAltitudeLiteral[]>([]);
+  const lastIdx3dRef = useRef<number>(-1);
 
   useEffect(() => { onTimeRef.current = onTime; }, [onTime]);
 
@@ -106,8 +109,24 @@ export function TrackPlayer({ track, onTime }: Props) {
     el.style.height = "100%";
     map3dHostRef.current.appendChild(el);
     el3dRef.current = el;
+
+    // Precompute the full 3D path; we slice into it as playback advances.
+    path3dRef.current = pts.map((p) => ({ lat: p.lat, lng: p.lng, altitude: 8 }));
+    const poly = new lib3d.Polyline3DElement({
+      coordinates: [path3dRef.current[0]!],
+      strokeColor: "#1a73e8",
+      strokeWidth: 10,
+      altitudeMode: "RELATIVE_TO_GROUND" as google.maps.maps3d.AltitudeMode,
+      drawsOccludedSegments: true,
+    });
+    el.append(poly);
+    poly3dRef.current = poly;
+    lastIdx3dRef.current = 0;
+
     return () => {
+      poly.remove();
       el.remove();
+      poly3dRef.current = null;
       el3dRef.current = null;
     };
   }, [lib3d, pts, hasStarted]);
@@ -127,6 +146,12 @@ export function TrackPlayer({ track, onTime }: Props) {
       },
       durationMillis: 800,
     });
+    // Grow the 3D polyline to match the camera position.
+    const poly = poly3dRef.current;
+    if (poly && idx !== lastIdx3dRef.current) {
+      poly.coordinates = path3dRef.current.slice(0, idx + 1);
+      lastIdx3dRef.current = idx;
+    }
   }
 
   // Animation loop — full track plays in ~8 minutes at 1×, scaled by speedRef.
@@ -179,6 +204,10 @@ export function TrackPlayer({ track, onTime }: Props) {
       progressRef.current = 0;
       setProgress(0);
       onTimeRef.current(tStart);
+      if (poly3dRef.current) {
+        poly3dRef.current.coordinates = [path3dRef.current[0]!];
+        lastIdx3dRef.current = 0;
+      }
     }
     setHasStarted(true);
     setIsPlaying(true);
