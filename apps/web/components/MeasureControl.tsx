@@ -9,31 +9,62 @@ interface Center {
   alt: number;
 }
 
-/** Photorealistic 3D map that slowly orbits the segment's center. */
-function Map3DView({ center, onClose }: { center: Center; onClose: () => void }) {
+/** Compass bearing (deg) from a → b. */
+function bearing(a: Center, b: Center): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const toDeg = (r: number) => (r * 180) / Math.PI;
+  const dLng = toRad(b.lng - a.lng);
+  const y = Math.sin(dLng) * Math.cos(toRad(b.lat));
+  const x =
+    Math.cos(toRad(a.lat)) * Math.sin(toRad(b.lat)) -
+    Math.sin(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.cos(dLng);
+  return (toDeg(Math.atan2(y, x)) + 360) % 360;
+}
+
+/** Photorealistic 3D map that flies the camera along the segment's path. */
+function Map3DView({ path, onClose }: { path: Center[]; onClose: () => void }) {
   const lib = useMapsLibrary("maps3d") as typeof google.maps.maps3d | null;
   const hostRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!lib || !hostRef.current) return;
-    const cam = { center: { lat: center.lat, lng: center.lng, altitude: center.alt }, tilt: 62, range: 4000 };
-    const el = new lib.Map3DElement({ ...cam, heading: 0, mode: "HYBRID" as google.maps.maps3d.MapMode });
+    if (!lib || !hostRef.current || path.length < 2) return;
+    const heading0 = bearing(path[0]!, path[1]!);
+    const el = new lib.Map3DElement({
+      center: { lat: path[0]!.lat, lng: path[0]!.lng, altitude: path[0]!.alt },
+      tilt: 65,
+      range: 1200,
+      heading: heading0,
+      mode: "HYBRID" as google.maps.maps3d.MapMode,
+    });
     el.style.width = "100%";
     el.style.height = "100%";
     hostRef.current.appendChild(el);
+
     let stop = false;
-    const orbit = () => {
+    let i = 0;
+    const step = () => {
       if (stop) return;
-      el.flyCameraAround({ camera: cam, durationMillis: 45000, rounds: 1 });
+      i = (i + 1) % path.length;
+      const cur = path[i]!;
+      const nxt = path[(i + 1) % path.length]!;
+      el.flyCameraTo({
+        endCamera: {
+          center: { lat: cur.lat, lng: cur.lng, altitude: cur.alt },
+          tilt: 65,
+          range: 1200,
+          heading: bearing(cur, nxt),
+        },
+        durationMillis: 2600,
+      });
     };
-    el.addEventListener("gmp-animationend", orbit);
-    const t = setTimeout(orbit, 600);
+    el.addEventListener("gmp-animationend", step);
+    const t = setTimeout(step, 700);
     return () => {
       stop = true;
       clearTimeout(t);
       el.remove();
     };
-  }, [lib, center]);
+  }, [lib, path]);
 
   return (
     <div className="map3d-panel">
@@ -144,7 +175,7 @@ export function MeasureControl({
   const drawing = useRef(false);
   const [stats, setStats] = useState<Stats | null>(null);
   const [bubble, setBubble] = useState<{ x: number; y: number } | null>(null);
-  const [center, setCenter] = useState<Center | null>(null);
+  const [flyPath, setFlyPath] = useState<Center[] | null>(null);
 
   // An OverlayView gives us the pixel<->latLng projection.
   useEffect(() => {
@@ -199,12 +230,17 @@ export function MeasureControl({
     setStats(computeSegment(tp, lo, hi, assets));
     setBubble(points[points.length - 1]!);
 
-    // Center the 3D view on the segment's mean position.
+    // Build a downsampled flythrough path (~36 waypoints) for the 3D view.
     const seg = tp.slice(lo, hi + 1);
-    const mid = seg[Math.floor(seg.length / 2)]!;
-    const meanLat = seg.reduce((s, p) => s + p.lat, 0) / seg.length;
-    const meanLng = seg.reduce((s, p) => s + p.lng, 0) / seg.length;
-    setCenter({ lat: meanLat, lng: meanLng, alt: mid.ele ?? 0 });
+    const MAX_WP = 36;
+    const stepN = Math.max(1, Math.floor(seg.length / MAX_WP));
+    const wp: Center[] = [];
+    for (let i = 0; i < seg.length; i += stepN) {
+      wp.push({ lat: seg[i]!.lat, lng: seg[i]!.lng, alt: seg[i]!.ele ?? 0 });
+    }
+    const last = seg[seg.length - 1]!;
+    wp.push({ lat: last.lat, lng: last.lng, alt: last.ele ?? 0 });
+    setFlyPath(wp.length >= 2 ? wp : null);
 
     // highlight the matched segment on the map
     clearSeg();
@@ -221,7 +257,7 @@ export function MeasureControl({
   function close() {
     setStats(null);
     setBubble(null);
-    setCenter(null);
+    setFlyPath(null);
     clearSeg();
   }
 
@@ -303,7 +339,7 @@ export function MeasureControl({
         </div>
       )}
 
-      {center && <Map3DView center={center} onClose={close} />}
+      {flyPath && <Map3DView path={flyPath} onClose={close} />}
     </>,
     document.body,
   );
