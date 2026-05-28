@@ -254,11 +254,20 @@ export function MeasureControl({
     });
   }
 
-  function close() {
+  // Clear the current measurement (kept in draw mode for another stroke).
+  function clearResults() {
     setStats(null);
     setBubble(null);
     setFlyPath(null);
     clearSeg();
+  }
+
+  // Close the result AND leave draw mode (used by the × buttons).
+  function exitMeasure() {
+    drawing.current = false;
+    setStroke([]);
+    setActive(false);
+    clearResults();
   }
 
   if (!track || track.points.length < 2) return null;
@@ -270,7 +279,7 @@ export function MeasureControl({
           className={active ? "on" : ""}
           onClick={() => {
             setActive((a) => !a);
-            close();
+            clearResults();
           }}
         >
           {active ? "Drawing… tap to exit" : "📏 Measure segment"}
@@ -282,7 +291,7 @@ export function MeasureControl({
           className="measure-layer"
           onPointerDown={(e) => {
             drawing.current = true;
-            close();
+            clearResults();
             setStroke([{ x: e.clientX, y: e.clientY }]);
           }}
           onPointerMove={(e) => {
@@ -310,7 +319,7 @@ export function MeasureControl({
           className="measure-bubble"
           style={{ left: Math.min(bubble.x + 14, window.innerWidth - 200), top: Math.max(12, bubble.y - 150) }}
         >
-          <button className="x" onClick={close} aria-label="Close">×</button>
+          <button className="x" onClick={exitMeasure} aria-label="Close">×</button>
           <h4>Segment</h4>
           <dl>
             <dt>Duration</dt><dd>{fmtDur(stats.durationMs)}</dd>
@@ -339,7 +348,7 @@ export function MeasureControl({
         </div>
       )}
 
-      {flyPath && <Map3DView path={flyPath} onClose={close} />}
+      {flyPath && <Map3DView path={flyPath} onClose={exitMeasure} />}
     </>,
     document.body,
   );
