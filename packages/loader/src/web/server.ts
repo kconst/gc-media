@@ -897,7 +897,11 @@ export async function runServer(port = 4321): Promise<void> {
     if (!track.length) return res.status(400).json({ error: "No GPX track uploaded." });
     const resolver = new GeoResolver();
     resolver.addTrack(track);
-    const WINDOW_MS = 15 * 60 * 1000;
+    // Gate on the track's overall span (so off-trip dates stay pending), but
+    // snap to the nearest point in time — this places items taken in a gap
+    // between track segments (e.g. an overnight at camp) at where the GPS
+    // picks back up, rather than dropping them.
+    const span = resolver.range()!;
 
     const pending = await loadPending();
     const placed: Asset[] = [];
@@ -905,16 +909,17 @@ export async function runServer(port = 4321): Promise<void> {
     let noTime = 0;
     let noMatch = 0;
     for (const it of pending) {
-      const t = it.capturedAt ? Date.parse(it.capturedAt) : NaN;
-      if (!Number.isFinite(t)) {
+      const raw = it.capturedAt ? Date.parse(it.capturedAt) : NaN;
+      if (!Number.isFinite(raw)) {
         noTime++;
         continue;
       }
-      const near = resolver.nearest(t + offMs);
-      if (!near || near.gapMs > WINDOW_MS) {
+      const t = raw + offMs;
+      if (t < span.start || t > span.end) {
         noMatch++;
         continue;
       }
+      const near = resolver.nearest(t)!;
       placed.push({ ...it, lat: near.point.lat, lng: near.point.lng, geoSource: "gpx" });
       placedIds.add(it.id);
     }
