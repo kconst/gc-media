@@ -44,7 +44,22 @@ export function PinModal({ asset, index, total, onPrev, onNext, onClose }: Props
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="media" ref={mediaRef}>
           {asset.type === "video" ? (
-            <video src={asset.fullUrl} poster={asset.posterUrl} controls playsInline />
+            <video
+              src={asset.fullUrl}
+              poster={asset.posterUrl}
+              controls
+              playsInline
+              muted
+              controlsList="nodownload"
+              // Keep playback silent even if a viewer tries to unmute via the controls.
+              onVolumeChange={(e) => {
+                const v = e.currentTarget;
+                if (!v.muted || v.volume > 0) {
+                  v.muted = true;
+                  v.volume = 0;
+                }
+              }}
+            />
           ) : (
             <img src={asset.fullUrl} alt={asset.description.slice(0, 80)} />
           )}
