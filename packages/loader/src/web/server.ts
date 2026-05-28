@@ -5,7 +5,7 @@ import path from "node:path";
 import express, { type NextFunction, type Request, type Response } from "express";
 import multer from "multer";
 import unzipper from "unzipper";
-import type { Asset } from "@gc-media/shared";
+import { computeBounds, type Asset } from "@gc-media/shared";
 import { config } from "../config.js";
 import { runPipeline, runPipelineOnItems, type RunOptions } from "../pipeline.js";
 import { listGoproMedia, downloadGoproMedia } from "../sources/gopro.js";
@@ -888,6 +888,56 @@ export async function runServer(port = 4321): Promise<void> {
     }
     const r = await bulkPlaceByTime(items);
     res.status("error" in r ? 400 : 200).json("error" in r ? r : { ok: true, ...r });
+  });
+
+  // Prune assets whose capture time falls outside [start,end]. Undated items
+  // are kept (we can't prove they're off-window). dryRun reports only.
+  app.post("/api/prune-by-date", async (req, res) => {
+    const b = req.body as { start?: string; end?: string; dryRun?: boolean };
+    const start = b.start ? Date.parse(b.start) : NaN;
+    const end = b.end ? Date.parse(b.end) : NaN;
+    if (!Number.isFinite(start) || !Number.isFinite(end)) {
+      return res.status(400).json({ error: "need valid start/end ISO times" });
+    }
+    // false = definitely outside window; true = inside; null = undated (keep).
+    const outside = (iso?: string): boolean => {
+      if (!iso) return false;
+      const t = Date.parse(iso);
+      return Number.isFinite(t) ? t < start || t > end : false;
+    };
+    const manifest = await loadManifest();
+    const pending = await loadPending();
+    const manRemove = manifest.assets.filter((a) => outside(a.capturedAt));
+    const penRemove = pending.filter((p) => outside(p.capturedAt));
+
+    const hist: Record<string, number> = {};
+    for (const a of [...manRemove, ...penRemove]) {
+      const day = a.capturedAt ? a.capturedAt.slice(0, 10) : "undated";
+      hist[day] = (hist[day] ?? 0) + 1;
+    }
+
+    if (b.dryRun) {
+      return res.json({
+        ok: true,
+        dryRun: true,
+        window: [new Date(start).toISOString(), new Date(end).toISOString()],
+        manifestTotal: manifest.assets.length,
+        pendingTotal: pending.length,
+        wouldRemoveManifest: manRemove.length,
+        wouldRemovePending: penRemove.length,
+        removedByDate: Object.fromEntries(Object.entries(hist).sort()),
+      });
+    }
+
+    const keepAssets = manifest.assets.filter((a) => !outside(a.capturedAt));
+    await saveAndPublish({ ...manifest, assets: keepAssets, bounds: computeBounds(keepAssets) });
+    await savePending(pending.filter((p) => !outside(p.capturedAt)));
+    res.json({
+      ok: true,
+      removedManifest: manRemove.length,
+      removedPending: penRemove.length,
+      keptManifest: keepAssets.length,
+    });
   });
 
   // Backfill durationSec on already-ingested videos by probing the hosted
