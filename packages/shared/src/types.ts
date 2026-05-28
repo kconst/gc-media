@@ -114,9 +114,21 @@ export const TRAIL_DEFS: TrailDef[] = [
       { lat: 36.0595, lng: -112.0882 }, // Ooh Aah Point
       { lat: 36.0645, lng: -112.0905 }, // Cedar Ridge
       { lat: 36.0820, lng: -112.0966 }, // Skeleton Point
-      { lat: 36.0985, lng: -112.0990 }, // Tonto Intersection
+      { lat: 36.0985, lng: -112.0990 }, // Tonto Intersection / Tipoff
       { lat: 36.1048, lng: -112.0978 }, // Black Bridge / river
       { lat: 36.1058, lng: -112.0975 }, // Phantom Ranch
+    ],
+  },
+  {
+    id: "tonto",
+    name: "Tonto Trail",
+    color: "#16a34a",
+    waypoints: [
+      { lat: 36.0873, lng: -112.1230 }, // Havasupai Gardens (BA junction)
+      { lat: 36.0900, lng: -112.1140 }, // Tonto Platform — west
+      { lat: 36.0930, lng: -112.1050 }, // Tonto Platform — mid
+      { lat: 36.0960, lng: -112.1010 }, // Tonto Platform — east approach
+      { lat: 36.0985, lng: -112.0990 }, // Tipoff (SK junction)
     ],
   },
 ];
