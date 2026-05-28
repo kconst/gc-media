@@ -80,7 +80,7 @@ export function MapView({ assets, bounds, track, trackMetric, onSelect }: Props)
             }
           : undefined
       }
-      mapTypeId="terrain"
+      mapTypeId="satellite"
       gestureHandling="greedy"
       mapTypeControl
       disableDefaultUI={false}
