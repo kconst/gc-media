@@ -53,6 +53,9 @@ export interface Asset {
   /** Original filename at ingest (e.g. GX010055.MP4); used to match by name. */
   originalFilename?: string;
 
+  /** Video duration in seconds (videos only). */
+  durationSec?: number;
+
   description: string;
   labels: Labels;
 

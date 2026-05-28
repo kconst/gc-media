@@ -24,3 +24,20 @@ export async function readVideoCapturedAt(localPath: string): Promise<number | u
   }
   return undefined;
 }
+
+/** Read a video's duration in seconds (accepts a local path or a URL). */
+export async function readVideoDuration(input: string): Promise<number | undefined> {
+  try {
+    const { stdout } = await execa("ffprobe", [
+      "-v", "quiet",
+      "-show_entries", "format=duration",
+      "-of", "csv=p=0",
+      input,
+    ]);
+    const d = parseFloat(stdout.trim());
+    if (Number.isFinite(d) && d > 0) return Math.round(d);
+  } catch {
+    // ffprobe missing or unreadable.
+  }
+  return undefined;
+}

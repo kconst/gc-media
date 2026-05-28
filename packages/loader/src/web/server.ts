@@ -14,6 +14,7 @@ import { loadPending, savePending } from "../pending.js";
 import { loadManifest, removeAsset, saveAndPublish, upsertAssets } from "../manifest.js";
 import { State } from "../state.js";
 import { listGpxFiles, loadGpxTracks } from "../meta/gpx.js";
+import { readVideoDuration } from "../meta/videoTime.js";
 import { GeoResolver } from "../geo/resolver.js";
 
 function timingSafeEqual(a: string, b: string): boolean {
@@ -887,6 +888,23 @@ export async function runServer(port = 4321): Promise<void> {
     }
     const r = await bulkPlaceByTime(items);
     res.status("error" in r ? 400 : 200).json("error" in r ? r : { ok: true, ...r });
+  });
+
+  // Backfill durationSec on already-ingested videos by probing the hosted
+  // web.mp4 (reads only the header, no re-transcode).
+  app.post("/api/backfill-durations", async (req, res) => {
+    const manifest = await loadManifest();
+    const todo = manifest.assets.filter((a) => a.type === "video" && a.durationSec === undefined);
+    let updated = 0;
+    for (const a of todo) {
+      const d = await readVideoDuration(a.fullUrl);
+      if (d !== undefined) {
+        a.durationSec = d;
+        updated++;
+      }
+    }
+    if (updated) await saveAndPublish({ ...manifest, assets: manifest.assets });
+    res.json({ ok: true, videos: todo.length, updated });
   });
 
   // Place every pending item that has a capture time onto the GPX track by

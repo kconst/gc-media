@@ -8,6 +8,7 @@ import { useTrack } from "@/hooks/useTrack";
 import { MapView } from "@/components/MapView";
 import { PinModal } from "@/components/PinModal";
 import { LabelFilter, labelKey } from "@/components/LabelFilter";
+import { VideoDurationFilter } from "@/components/VideoDurationFilter";
 import { TrackControls } from "@/components/TrackControls";
 import { metricDomain, type TrackMetric } from "@/components/TrackOverlay";
 
@@ -17,6 +18,7 @@ export default function Home() {
   const [active, setActive] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Asset | null>(null);
   const [metric, setMetric] = useState<TrackMetric>("speed");
+  const [durRange, setDurRange] = useState<[number, number] | null>(null);
 
   const hasHr = useMemo(() => !!track?.points.some((p) => p.hr !== undefined), [track]);
   const legendDomain = useMemo(
@@ -27,13 +29,24 @@ export default function Home() {
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
   const assets = manifest?.assets ?? [];
 
-  // OR filter: with labels selected, show assets carrying at least one.
+  const maxDur = useMemo(
+    () => Math.ceil(Math.max(0, ...assets.filter((a) => a.type === "video").map((a) => a.durationSec ?? 0))),
+    [assets],
+  );
+  const effRange: [number, number] = durRange ?? [0, maxDur];
+
+  // OR filter on labels, then (if engaged) hide videos outside the duration range.
   const visible = useMemo(() => {
-    if (active.size === 0) return assets;
-    return assets.filter((a) =>
-      LABEL_CATEGORIES.some((c) => a.labels[c].some((v) => active.has(labelKey(c, v)))),
-    );
-  }, [assets, active]);
+    let out = assets;
+    if (active.size > 0) {
+      out = out.filter((a) => LABEL_CATEGORIES.some((c) => a.labels[c].some((v) => active.has(labelKey(c, v)))));
+    }
+    if (durRange) {
+      const [lo, hi] = durRange;
+      out = out.filter((a) => a.type !== "video" || (a.durationSec !== undefined && a.durationSec >= lo && a.durationSec <= hi));
+    }
+    return out;
+  }, [assets, active, durRange]);
 
   // Track order = capture-time order; undated pins sort to the end.
   const ordered = useMemo(() => {
@@ -65,6 +78,7 @@ export default function Home() {
       {apiKey && (
         <APIProvider apiKey={apiKey}>
           <LabelFilter assets={assets} active={active} onToggle={toggle} onClear={() => setActive(new Set())} />
+          <VideoDurationFilter assets={assets} range={effRange} onChange={setDurRange} />
           {track && track.points.length > 1 && (
             <TrackControls metric={metric} onChange={setMetric} hasHr={hasHr} domain={legendDomain} />
           )}

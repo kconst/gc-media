@@ -8,7 +8,7 @@ import { readExif } from "./meta/exif.js";
 import { readTakeoutSidecar } from "./meta/takeout.js";
 import { extractGoproTrack } from "./meta/gopro.js";
 import { loadGpxTracks } from "./meta/gpx.js";
-import { readVideoCapturedAt } from "./meta/videoTime.js";
+import { readVideoCapturedAt, readVideoDuration } from "./meta/videoTime.js";
 import { makeDerivatives, sampleFrames } from "./media/derivatives.js";
 import { uploadFile } from "./media/s3.js";
 import { analyzeImages } from "./ai/claude.js";
@@ -165,6 +165,7 @@ async function runItems(
         posterUrl,
         capturedAt: capturedAt ? new Date(capturedAt).toISOString() : undefined,
         originalFilename: it.originalFilename,
+        durationSec: it.type === "video" ? await readVideoDuration(it.localPath) : undefined,
         description,
         labels,
         credit: it.credit,
