@@ -160,6 +160,7 @@ const page = (mapsKey: string, mapId: string, incomingDir: string) => /* html */
     </section>
     <section>
       <h2>Needs placement (<span id="pcount">0</span>)</h2>
+      <div class="row"><button id="placeall" class="secondary">Place all by time</button> <span id="pastatus" class="empty"></span></div>
       <div id="pending"><div class="empty">Nothing pending.</div></div>
     </section>
     <section>
@@ -383,6 +384,18 @@ const page = (mapsKey: string, mapId: string, incomingDir: string) => /* html */
       refresh();
     } catch { $('gpstatus').textContent = 'Request failed.'; }
     $('gpimport').disabled = false;
+  });
+
+  $('placeall').addEventListener('click', async () => {
+    if (!confirm('Time-match every pending item against the GPX track and place those within ~15 min of the route?')) return;
+    $('pastatus').textContent = 'Placing…'; $('placeall').disabled = true;
+    try {
+      const j = await fetch('/api/place-pending-by-time', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ timeOffsetMinutes: Number($('offset').value)||0 }) }).then(r => r.json());
+      if (!j.ok) { $('pastatus').textContent = j.error || 'Failed.'; }
+      else { $('pastatus').textContent = 'Placed ' + j.placed + ' of ' + j.total + ' (' + j.noMatch + ' off-track, ' + j.noTime + ' undated).'; }
+      refresh();
+    } catch { $('pastatus').textContent = 'Request failed.'; }
+    $('placeall').disabled = false;
   });
 
   $('icimport').addEventListener('click', async () => {
@@ -874,6 +887,48 @@ export async function runServer(port = 4321): Promise<void> {
     }
     const r = await bulkPlaceByTime(items);
     res.status("error" in r ? 400 : 200).json("error" in r ? r : { ok: true, ...r });
+  });
+
+  // Place every pending item that has a capture time onto the GPX track by
+  // time-match, in a single manifest publish.
+  app.post("/api/place-pending-by-time", async (req, res) => {
+    const offMs = (Number((req.body as { timeOffsetMinutes?: number }).timeOffsetMinutes) || 0) * 60_000;
+    const track = await loadGpxTracks(config.incomingDir);
+    if (!track.length) return res.status(400).json({ error: "No GPX track uploaded." });
+    const resolver = new GeoResolver();
+    resolver.addTrack(track);
+    const WINDOW_MS = 15 * 60 * 1000;
+
+    const pending = await loadPending();
+    const placed: Asset[] = [];
+    const placedIds = new Set<string>();
+    let noTime = 0;
+    let noMatch = 0;
+    for (const it of pending) {
+      const t = it.capturedAt ? Date.parse(it.capturedAt) : NaN;
+      if (!Number.isFinite(t)) {
+        noTime++;
+        continue;
+      }
+      const near = resolver.nearest(t + offMs);
+      if (!near || near.gapMs > WINDOW_MS) {
+        noMatch++;
+        continue;
+      }
+      placed.push({ ...it, lat: near.point.lat, lng: near.point.lng, geoSource: "gpx" });
+      placedIds.add(it.id);
+    }
+    if (placed.length) {
+      await saveAndPublish(upsertAssets(await loadManifest(), placed));
+      const state = await State.load();
+      for (const a of placed) {
+        const rec = state.get(a.id);
+        if (rec) state.set({ ...rec, geolocated: true });
+      }
+      await state.save();
+      await savePending(pending.filter((p) => !placedIds.has(p.id)));
+    }
+    res.json({ ok: true, placed: placed.length, total: pending.length, noTime, noMatch });
   });
 
   // Import recording times straight from GoPro Cloud and place by filename.
