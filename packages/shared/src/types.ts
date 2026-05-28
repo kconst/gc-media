@@ -87,6 +87,8 @@ export interface TrackPoint {
   hr?: number;
   /** Ground speed in metres per second, derived from consecutive fixes. */
   speed?: number;
+  /** Elevation in metres, if the source carried it. */
+  ele?: number;
 }
 
 export interface Track {

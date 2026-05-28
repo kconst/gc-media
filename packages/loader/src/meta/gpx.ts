@@ -25,6 +25,7 @@ export function parseGpx(xml: string): TrackPoint[] {
   // Heart rate lives in a Garmin TrackPointExtension; the namespace prefix
   // varies (gpxtpx:hr, ns3:hr, plain hr), so match any prefix.
   const hrRe = /<(?:\w+:)?hr>(\d+)<\/(?:\w+:)?hr>/i;
+  const eleRe = /<ele>([-\d.]+)<\/ele>/i;
 
   let m: RegExpExecArray | null;
   while ((m = trkptRe.exec(xml))) {
@@ -38,6 +39,8 @@ export function parseGpx(xml: string): TrackPoint[] {
     const point: TrackPoint = { lat, lng, t };
     const hr = hrRe.exec(inner)?.[1];
     if (hr) point.hr = Number(hr);
+    const ele = parseFloat(eleRe.exec(inner)?.[1] ?? "");
+    if (Number.isFinite(ele)) point.ele = ele;
     out.push(point);
   }
 

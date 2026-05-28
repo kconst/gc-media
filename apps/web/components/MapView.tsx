@@ -4,6 +4,7 @@ import { MarkerClusterer } from "@googlemaps/markerclusterer";
 import type { Asset, MapBounds, Track } from "@gc-media/shared";
 import { Pin } from "./Pin";
 import { TrackOverlay, type TrackMetric } from "./TrackOverlay";
+import { MeasureControl } from "./MeasureControl";
 
 type MarkerEl = google.maps.marker.AdvancedMarkerElement;
 
@@ -85,6 +86,7 @@ export function MapView({ assets, bounds, track, trackMetric, onSelect }: Props)
       disableDefaultUI={false}
     >
       {track && <TrackOverlay track={track} metric={trackMetric} />}
+      {track && <MeasureControl track={track} assets={assets} />}
       <ClusteredPins assets={assets} onSelect={onSelect} />
     </Map>
   );
