@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { LABEL_CATEGORIES, type Asset, type LabelCategory } from "@gc-media/shared";
 
 const CATEGORY_TITLES: Record<LabelCategory, string> = {
@@ -38,28 +39,41 @@ interface Props {
 }
 
 export function LabelFilter({ assets, active, onToggle, onClear }: Props) {
+  const [open, setOpen] = useState(false);
   const labels = collectLabels(assets);
+  if (!LABEL_CATEGORIES.some((c) => labels[c].length > 0)) return null;
+
   return (
-    <div className="filter">
-      <h2>Filter by label{active.size > 0 && <button onClick={onClear} style={{ float: "right" }}>clear</button>}</h2>
-      {LABEL_CATEGORIES.map((c) =>
-        labels[c].length === 0 ? null : (
-          <div key={c}>
-            <div className="cat">{CATEGORY_TITLES[c]}</div>
-            {labels[c].map((v) => {
-              const key = labelKey(c, v);
-              return (
-                <span
-                  key={key}
-                  className={`chip${active.has(key) ? " active" : ""}`}
-                  onClick={() => onToggle(key)}
-                >
-                  {v}
-                </span>
-              );
-            })}
-          </div>
-        ),
+    <div className={`filter${open ? " open" : ""}`}>
+      <button className="filter-head" onClick={() => setOpen((o) => !o)}>
+        <span>{open ? "▾" : "▸"} Labels</span>
+        {active.size > 0 && <span className="badge">{active.size}</span>}
+      </button>
+      {open && (
+        <div className="filter-body">
+          {active.size > 0 && (
+            <button className="clear" onClick={onClear}>clear all</button>
+          )}
+          {LABEL_CATEGORIES.map((c) =>
+            labels[c].length === 0 ? null : (
+              <div key={c}>
+                <div className="cat">{CATEGORY_TITLES[c]}</div>
+                {labels[c].map((v) => {
+                  const key = labelKey(c, v);
+                  return (
+                    <span
+                      key={key}
+                      className={`chip${active.has(key) ? " active" : ""}`}
+                      onClick={() => onToggle(key)}
+                    >
+                      {v}
+                    </span>
+                  );
+                })}
+              </div>
+            ),
+          )}
+        </div>
       )}
     </div>
   );

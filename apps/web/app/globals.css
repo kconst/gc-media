@@ -24,16 +24,23 @@ body { overflow: hidden; }
 .pin-wrap { position: relative; }
 
 /* --- Label filter --- */
-.filter {
-  position: absolute; top: 12px; left: 12px; z-index: 5;
-  background: rgba(255,255,255,.95); border-radius: 10px; padding: 10px 12px;
-  box-shadow: 0 2px 10px rgba(0,0,0,.2); max-width: 280px; max-height: 80vh; overflow: auto;
+/* Sits below Google's Map/Satellite control (top-left) so it doesn't cover it. */
+.filter { position: absolute; top: 60px; left: 12px; z-index: 5; }
+.filter-head {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600;
+  padding: 6px 10px; border-radius: 8px; border: 1px solid #ccc; background: rgba(255,255,255,.95);
+  cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,.2);
 }
-.filter h2 { font-size: 14px; margin: 0 0 6px; }
-.filter .cat { font-size: 11px; text-transform: uppercase; color: #888; margin: 8px 0 2px; }
+.filter-head .badge { background: #2b6cb0; color: #fff; border-radius: 10px; padding: 0 6px; font-size: 11px; }
+.filter-body {
+  margin-top: 6px; background: rgba(255,255,255,.97); border-radius: 10px; padding: 8px 10px;
+  box-shadow: 0 2px 10px rgba(0,0,0,.2); width: 210px; max-height: 46vh; overflow: auto;
+}
+.filter-body .clear { font-size: 11px; padding: 2px 8px; margin-bottom: 4px; border: 1px solid #ccc; border-radius: 6px; background: #f7f7f7; cursor: pointer; }
+.filter .cat { font-size: 10px; text-transform: uppercase; color: #888; margin: 8px 0 2px; }
 .chip {
-  display: inline-block; font-size: 12px; padding: 3px 8px; margin: 2px;
-  border-radius: 12px; border: 1px solid #ccc; cursor: pointer; background: #fff;
+  display: inline-block; font-size: 11px; padding: 2px 7px; margin: 2px;
+  border-radius: 11px; border: 1px solid #ccc; cursor: pointer; background: #fff;
 }
 .chip.active { background: #2b6cb0; color: #fff; border-color: #2b6cb0; }
 
