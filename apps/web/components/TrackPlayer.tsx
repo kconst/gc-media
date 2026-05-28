@@ -111,17 +111,16 @@ export function TrackPlayer({ track, onTime }: Props) {
     el3dRef.current = el;
 
     // Precompute the full 3D path; we slice into it as playback advances.
-    path3dRef.current = pts.map((p) => ({ lat: p.lat, lng: p.lng, altitude: 8 }));
+    path3dRef.current = pts.map((p) => ({ lat: p.lat, lng: p.lng, altitude: 0 }));
     const poly = new lib3d.Polyline3DElement({
-      coordinates: [path3dRef.current[0]!],
       strokeColor: "#1a73e8",
-      strokeWidth: 10,
-      altitudeMode: "RELATIVE_TO_GROUND" as google.maps.maps3d.AltitudeMode,
-      drawsOccludedSegments: true,
+      strokeWidth: 12,
+      altitudeMode: "CLAMP_TO_GROUND" as google.maps.maps3d.AltitudeMode,
     });
     el.append(poly);
+    poly.coordinates = [path3dRef.current[0]!];
     poly3dRef.current = poly;
-    lastIdx3dRef.current = 0;
+    lastIdx3dRef.current = -1;
 
     return () => {
       poly.remove();
