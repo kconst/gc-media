@@ -48,7 +48,7 @@ export default function Home() {
     }
     if (durRange) {
       const [lo, hi] = durRange;
-      out = out.filter((a) => a.type !== "video" || (a.durationSec !== undefined && a.durationSec >= lo && a.durationSec <= hi));
+      out = out.filter((a) => a.type !== "video" || a.durationSec === undefined || (a.durationSec >= lo && a.durationSec <= hi));
     }
     return out;
   }, [assets, active, durRange, mediaType]);

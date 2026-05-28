@@ -83,7 +83,7 @@ export function MapView({ assets, bounds, track, trackMetric, trails, activeTrai
             }
           : undefined
       }
-      mapTypeId="satellite"
+      mapTypeId="hybrid"
       gestureHandling="greedy"
       mapTypeControl
       disableDefaultUI={false}
