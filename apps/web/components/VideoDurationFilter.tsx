@@ -9,9 +9,9 @@ function fmt(sec: number): string {
 
 interface Props {
   assets: Asset[];
-  /** Inclusive [min, max] seconds; videos outside are hidden (photos always show). */
+  /** Inclusive [min, max] seconds; null means no filter (show all). */
   range: [number, number];
-  onChange: (r: [number, number]) => void;
+  onChange: (r: [number, number] | null) => void;
 }
 
 export function VideoDurationFilter({ assets, range, onChange }: Props) {
@@ -23,15 +23,25 @@ export function VideoDurationFilter({ assets, range, onChange }: Props) {
   if (max <= 0) return null; // no durations known yet
   const [lo, hi] = range;
 
+  // When the range covers the full extent, clear the filter so all videos show.
+  function emit(newLo: number, newHi: number) {
+    if (newLo <= 0 && newHi >= max) onChange(null);
+    else onChange([newLo, newHi]);
+  }
+
+  const isAll = lo <= 0 && hi >= max;
+
   return (
     <div className="dur-filter">
-      <div className="dur-head">Video length: {fmt(lo)} – {fmt(hi)}</div>
+      <div className="dur-head">
+        Video length: {isAll ? "All" : `${fmt(lo)} – ${fmt(hi)}`}
+      </div>
       <input
         type="range"
         min={0}
         max={max}
         value={Math.min(lo, hi)}
-        onChange={(e) => onChange([Math.min(Number(e.target.value), hi), hi])}
+        onChange={(e) => emit(Math.min(Number(e.target.value), hi), hi)}
         aria-label="Minimum video length"
       />
       <input
@@ -39,7 +49,7 @@ export function VideoDurationFilter({ assets, range, onChange }: Props) {
         min={0}
         max={max}
         value={Math.max(hi, lo)}
-        onChange={(e) => onChange([lo, Math.max(Number(e.target.value), lo)])}
+        onChange={(e) => emit(lo, Math.max(Number(e.target.value), lo))}
         aria-label="Maximum video length"
       />
       <div className="dur-note">Photos always shown · {fmt(max)} max</div>
